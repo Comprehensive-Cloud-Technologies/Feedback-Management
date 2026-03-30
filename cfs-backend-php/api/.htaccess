@@ -1,0 +1,27 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Hosted at https://feedback.catalystsolutions.eco where the API lives at /api/
+    RewriteBase /api/
+    
+    # Pass authorization headers through
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    
+    # Handle CORS preflight requests
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+    
+    # Route all requests to index.php unless it's a real file
+    # (allow directories like /sites to be routed too, to avoid 301 directory slash redirects)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^(.+)$ index.php [QSA,L]
+</IfModule>
+
+# Allow authorization header
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "^" HTTP_AUTHORIZATION=$0
+</IfModule>
+
+# Enable PHP to receive Authorization header
+<IfModule mod_php.c>
+    php_flag suhosin.executor.include.whitelist ""
+</IfModule>

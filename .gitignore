@@ -1,0 +1,92 @@
+# ============================================================
+#  CANTEEN FEEDBACK SYSTEM — Root .gitignore
+# ============================================================
+
+# ─── SECRETS — NEVER COMMIT ─────────────────────────────────
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+.env.*.local
+cfs-backend-php/.env
+
+# ─── Frontend build output ──────────────────────────────────
+cfs-frontend/node_modules/
+cfs-frontend/dist/
+cfs-frontend/dist-ssr/
+cfs-frontend/*.local
+cfs-frontend/tsc_errors.txt
+
+# ─── PHP debug / test / setup scripts (not for production) ──
+cfs-backend-php/test*.php
+cfs-backend-php/debug*.php
+cfs-backend-php/diagnose*.php
+cfs-backend-php/check-prod.php
+cfs-backend-php/direct_migrate.php
+cfs-backend-php/seed_branch_admins.php
+
+# ─── PHP compiled/cache ─────────────────────────────────────
+cfs-backend-php/vendor/
+cfs-backend-php/*.log
+
+# ─── Pre-built frontend assets (CI builds these fresh) ──────
+cfs-backend-php/public_html/feedback/assets/
+cfs-backend-php/public_html/feedback/*.js
+cfs-backend-php/public_html/feedback/*.css
+
+# ─── OS files ────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Editor / IDE ────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.sln
+*.ntvs*
+*.njsproj
+*.sw?
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ─── Temp housekeeping docs (generated during dev) ──────────
+ALL_ERRORS_FIXED.md
+BUG_FIXES_DETAILED.md
+COMPLETION_REPORT.md
+DATABASE_MIGRATION_COMPLETE.md
+DETAILED_CHANGES_LOG.md
+EMOJI_FIX_TEST_NOW.md
+ERRORS_FIXED.md
+FINAL_BROWSER_CACHE_CLEAR.md
+FINAL_DELIVERY_REPORT.md
+FINAL_STATUS.md
+FIX_SUMMARY.md
+FRONTEND_VERIFICATION_CHECKLIST.md
+LATEST_FIXES_SUMMARY.md
+LOCAL_SETUP_COMPLETE.md
+MIGRATION_COMPLETE.md
+PROJECT_COMPLETION_REPORT.md
+QUICK_REFRESH_GUIDE.md
+QUICK_VERIFICATION.md
+READY_TO_TEST_COMPLETE_FIX.md
+ROOT_CAUSE_FIXED.md
+SEGMENTS_IMPLEMENTATION_COMPLETE.md
+SYSTEM_READY_FOR_TESTING.md
+SYSTEM_STATUS_COMPLETE.md
+TESTING_CHECKLIST.md
+TEST_AND_FIX_GUIDE.md
+TESTING_ACTION_GUIDE.md
+verify_changes.ps1
+verify_frontend_changes.html
+VERIFY_SYSTEM.ps1

@@ -1,0 +1,565 @@
+/// <reference types="vite/client" />
+
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'react-qr-code';
+import { getEndpoints, FRONTEND_URL, API_URL } from '../constants';
+import { useAuth } from '../hooks/useAuth';
+import { FaPrint } from 'react-icons/fa';
+import catalystLogo from '../src/images/clogo.png';
+import qrCardBg from '../src/images/cartimg.png';
+
+interface SiteData {
+  location: string;
+  branch_location: string;
+  canteens?: string[];
+}
+
+const getQRCodeUrl = (site: string, canteen?: string) => {
+  const protocol = window.location.protocol;
+  const host = window.location.host; // This includes port e.g. 192.168.1.10:5173
+  const base = `${protocol}//${host}`;
+
+  let url = `${base}/#/feedback?site=${encodeURIComponent(site)}`;
+  if (canteen) url += `&canteen=${encodeURIComponent(canteen)}`;
+  return url;
+};
+
+const QRCodePrintPage: React.FC = () => {
+  const { isAuthenticated, logout } = useAuth();
+  const endpoints = getEndpoints();
+  const [sites, setSites] = useState<SiteData[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('All Branches');
+  const [modalData, setModalData] = useState<{ site: string, canteen?: string, title: string } | null>(null);
+  const [printAllQRs, setPrintAllQRs] = useState(false);
+
+  // We'll use a dedicated print window to avoid issues with modal transforms
+  // and browser print rendering that can produce blank pages. The handlers
+  // below open a new window containing only the printable content and call
+  // `print()` there.
+  const printAreaRef = React.useRef<HTMLDivElement | null>(null);
+  const printAllRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Shared styles for both preview and print
+  const sharedStyles = `
+    .qr-poster-container {
+      width: 210mm;
+      height: 297mm;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20mm;
+      box-sizing: border-box;
+      position: relative;
+    }
+    .qr-box-inner {
+      padding: 30px;
+      background: white;
+      border-radius: 40px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+      border: 1px solid #eee;
+      margin-bottom: 30px;
+    }
+    .url-pill-minimal {
+      display: inline-block;
+      padding: 15px 40px;
+      border-radius: 12px;
+      font-family: monospace;
+      font-size: 16pt;
+      color: #000;
+      font-weight: 700;
+      background: #f8f9fa;
+      border: 2px solid #eee;
+      word-break: break-all;
+      max-width: 90%;
+      text-align: center;
+    }
+    .scan-text-minimal {
+      color: #666;
+      font-family: sans-serif;
+      font-size: 14pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 25px;
+    }
+  `;
+
+  const handlePrintSingle = () => {
+    const el = printAreaRef.current || document.getElementById('qr-print-area');
+    if (!el) return;
+
+    // Create print-specific styles (No more external 404s!)
+    const printStyles = `
+      <style>
+        ${sharedStyles}
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            padding: 0;
+            background: white;
+            -webkit-print-color-adjust: exact;
+          }
+          .no-print {
+            display: none !important;
+          }
+          #print-container {
+            width: 210mm;
+            height: 297mm;
+            position: relative;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+          }
+        }
+      </style>
+    `;
+
+    // Use an iframe for printing to avoid new window redirection
+    let printFrame = document.getElementById('print-frame') as HTMLIFrameElement;
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'print-frame';
+      printFrame.style.display = 'none';
+      document.body.appendChild(printFrame);
+    }
+
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.no-print').forEach(b => b.remove());
+
+    const doc = printFrame.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Print QR Code</title>
+          ${printStyles}
+        </head>
+        <body>
+          <div id="print-container">${clone.outerHTML}</div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // Wait for content to load then print
+    setTimeout(() => {
+      printFrame.contentWindow?.focus();
+      printFrame.contentWindow?.print();
+    }, 500);
+  };
+
+  const handlePrintAll = () => {
+    const el = printAllRef.current || document.getElementById('qr-print-all-area');
+    if (!el) return;
+
+    const printStyles = `
+      <style>
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+          body {
+            margin: 0;
+            padding: 0;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .qr-page {
+            page-break-after: always;
+            page-break-inside: avoid;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100vh !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+          }
+          .qr-page:last-child {
+            page-break-after: avoid;
+          }
+          /* Ensure images and QR codes scale correctly */
+          img, canvas, svg {
+            max-height: 60vh !important;
+            width: auto !important;
+          }
+          h3, p, span {
+            margin: 10px 0 !important;
+          }
+        }
+      </style>
+    `;
+
+    let printFrame = document.getElementById('print-frame') as HTMLIFrameElement;
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'print-frame';
+      printFrame.style.display = 'none';
+      document.body.appendChild(printFrame);
+    }
+
+    const doc = printFrame.contentWindow?.document;
+    if (!doc) return;
+
+    // We need to find all the individual QR card containers
+    // They are nested inside the fragments
+    const qrCards = el.querySelectorAll('.qr-collectible');
+    let wrappedContent = '';
+
+    qrCards.forEach(card => {
+      wrappedContent += `<div class="qr-page">${card.innerHTML}</div>`;
+    });
+
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Print All QR Codes</title>
+          ${printStyles}
+          <link rel="stylesheet" href="/index.css">
+        </head>
+        <body>
+          ${wrappedContent}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      printFrame.contentWindow?.focus();
+      printFrame.contentWindow?.print();
+    }, 1000);
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('canteenAdminJWT') || '';
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    const fetchData = async () => {
+      try {
+        const res = await fetch(endpoints.SITES, { headers });
+        const data = await res.json();
+
+        if (Array.isArray(data?.sites)) {
+          let loadedSites: SiteData[] = data.sites;
+
+          try {
+            if (token) {
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              if (payload?.role === 'branch_admin' && payload?.site) {
+                loadedSites = loadedSites.filter(s => s.location === payload.site);
+              }
+            }
+          } catch { }
+
+          const sitesWithCanteens = await Promise.all(loadedSites.map(async (site) => {
+            try {
+              const cRes = await fetch(`${endpoints.CANTEENS}?site=${encodeURIComponent(site.location)}`, { headers });
+              const cData = await cRes.json();
+              return { ...site, canteens: cData.canteens || [] };
+            } catch {
+              return { ...site, canteens: [] };
+            }
+          }));
+          setSites(sitesWithCanteens);
+        }
+      } catch (e) {
+        console.error(e);
+        setSites([]);
+      }
+    };
+    fetchData();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-4 mb-4 shadow-md flex items-center justify-between px-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">QR Codes Generator (Poster Layout)</h1>
+            <p className="text-white/80 text-sm mt-1">Generated URLs use: <span className="font-mono bg-black/10 px-2 rounded">{window.location.origin}</span></p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right mr-4 no-print">
+              <div className="text-white font-bold text-lg leading-none">{sites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0)}</div>
+              <div className="text-white/70 text-[10px] uppercase font-bold tracking-widest">Total QRs</div>
+            </div>
+            <button
+              onClick={() => setPrintAllQRs(true)}
+              className="bg-white text-primary-600 hover:bg-gray-100 px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg flex items-center gap-2 transition hover:scale-105 no-print"
+            >
+              <FaPrint /> Print All
+            </button>
+          </div>
+        </div>
+
+        {/* Network Warning */}
+        {window.location.hostname === 'localhost' && (
+          <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg shadow-sm no-print">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="text-amber-800 font-bold text-sm">Localhost Detected</p>
+                <p className="text-amber-700 text-xs mt-0.5">Mobile phones cannot scan "localhost" links. To create working QR codes, access this admin panel using your Computer's Network IP (e.g. <strong>http://192.168.x.x:5173</strong>).</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Branch Filter Bar */}
+        <div className="flex flex-wrap items-center gap-4 mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100 no-print">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Filter by Branch / Site</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all min-w-[240px]"
+            >
+              <option value="All Branches">All Sites / Branches</option>
+              {sites.map((site: SiteData) => (
+                <option key={site.location} value={site.location}>{site.location}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Filtered Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 no-print">
+          {sites
+            .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
+            .map((site) => (
+              <React.Fragment key={site.location}>
+                {(site.canteens && site.canteens.length > 0) ? (
+                  site.canteens.map(canteen => (
+                    <div key={`${site.location}-${canteen}`} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col items-center hover:shadow-md transition">
+                      <h3 className="font-bold text-gray-800 text-center mb-1">{site.location}</h3>
+                      <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-medium mb-3">{canteen}</span>
+                      <QRCode value={getQRCodeUrl(site.location, canteen)} size={140} />
+                      <p className="text-xs text-gray-400 mt-4 font-mono break-all text-center px-2">{canteen}</p>
+                      <div className="flex gap-2 mt-4 w-full">
+                        <button
+                          onClick={() => setModalData({ site: site.location, canteen, title: `${canteen}` })}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
+                        >
+                          Print QR
+                        </button>
+                        <button
+                          onClick={() => window.open(getQRCodeUrl(site.location, canteen), '_blank')}
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
+                        >
+                          Open Form
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col items-center hover:shadow-md transition">
+                    <h3 className="font-bold text-gray-800 text-center mb-1">{site.location}</h3>
+                    <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium mb-3">Main Site</span>
+                    <QRCode value={getQRCodeUrl(site.location)} size={140} />
+                    <p className="text-xs text-gray-400 mt-4">{site.location}</p>
+                    <div className="flex gap-2 mt-4 w-full">
+                      <button
+                        onClick={() => setModalData({ site: site.location, title: site.location })}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
+                      >
+                        Print QR
+                      </button>
+                      <button
+                        onClick={() => window.open(getQRCodeUrl(site.location), '_blank')}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
+                      >
+                        Open Form
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+        </div>
+      </div>
+
+
+
+      {modalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md overflow-hidden print:p-0 print:block print:overflow-visible">
+
+          {/* Close Button - Outside scale wrapper for easy access on screen */}
+          <button
+            onClick={() => setModalData(null)}
+            className="fixed top-6 right-6 text-white/80 hover:text-white z-[60] no-print p-2 transition-transform hover:rotate-90"
+            title="Close Preview"
+          >
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+
+          {/* Scaled Preview Wrapper - Center properly */}
+          <div className="w-full h-full flex items-center justify-center overflow-hidden print:w-auto print:h-auto print:block">
+            <style>{sharedStyles}</style>
+            <div className="relative shadow-2xl bg-white transform-gpu scale-[0.30] sm:scale-[0.40] md:scale-[0.50] lg:scale-[0.55] xl:scale-[0.60] print:scale-100 print:transform-none transition-transform duration-300 origin-center">
+
+              <div id="qr-print-area"
+                className="qr-poster-container"
+                ref={printAreaRef}
+              >
+                {/* Print Button (Hidden in Print) */}
+                <button
+                  onClick={handlePrintSingle}
+                  className="absolute top-12 right-12 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black shadow-xl hover:scale-105 transition flex items-center gap-3 text-2xl border-4 border-white/20 no-print z-50 cursor-pointer"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                  PRINT CARD
+                </button>
+
+                <div className="qr-box-inner">
+                  <QRCode value={getQRCodeUrl(modalData.site, modalData.canteen)} size={480} />
+                </div>
+
+                <div className="url-pill-minimal">
+                  {getQRCodeUrl(modalData.site, modalData.canteen)}
+                </div>
+
+                <div className="scan-text-minimal">
+                  Scan to provide feedback
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print All QR Codes Modal */}
+      {printAllQRs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md overflow-auto print:p-0 print:block print:overflow-visible">
+          {/* Close Button */}
+          <button
+            onClick={() => setPrintAllQRs(false)}
+            className="fixed top-6 right-6 text-white/80 hover:text-white z-[60] no-print p-2 transition-transform hover:rotate-90"
+            title="Close Preview"
+          >
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+
+          {/* Print Button */}
+          <button
+            onClick={handlePrintAll}
+            className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-full font-bold shadow-xl hover:scale-105 transition flex items-center gap-2 text-lg border-4 border-white/20 no-print z-50 cursor-pointer"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            PRINT ALL
+          </button>
+
+          {/* Grid of all QR codes */}
+          <div id="qr-print-all-area" className="w-full bg-white" ref={printAllRef}>
+            <style>{`
+              #qr-print-all-area {
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+                padding: 0;
+                margin: 0;
+              }
+              #qr-print-all-area > div {
+                width: 210mm;
+                height: 297mm;
+                display: flex !important;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 40px;
+                box-sizing: border-box;
+                page-break-after: always;
+                page-break-inside: avoid;
+                break-inside: avoid;
+                background: white;
+              }
+              #qr-print-all-area > div:last-child {
+                page-break-after: auto;
+              }
+              @media print {
+                body { margin: 0; padding: 0; }
+                #qr-print-all-area {
+                  display: flex;
+                  flex-direction: column;
+                  gap: 0;
+                  width: 210mm;
+                  height: auto;
+                }
+                #qr-print-all-area > div {
+                  page-break-after: always;
+                  page-break-inside: avoid;
+                  break-inside: avoid;
+                  width: 210mm;
+                  height: 297mm;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 40px;
+                }
+                #qr-print-all-area > div:last-child {
+                  page-break-after: auto;
+                }
+              }
+            `}</style>
+            <div className="flex flex-col gap-0">
+              {sites
+                .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
+                .map((site) => (
+                  <React.Fragment key={site.location}>
+                    {(site.canteens && site.canteens.length > 0) ? (
+                      site.canteens.map(canteen => (
+                        <div key={`${site.location}-${canteen}`} className="qr-collectible flex flex-col items-center justify-center">
+                          <h3 className="font-bold text-2xl text-gray-800 text-center mb-4">{site.location}</h3>
+                          <span className="bg-blue-100 text-blue-800 text-sm px-4 py-2 rounded-full font-bold mb-8">{canteen}</span>
+                          <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
+                            <QRCode value={getQRCodeUrl(site.location, canteen)} size={280} />
+                          </div>
+                          <div className="mt-10 w-full text-center px-8">
+                            <p className="text-gray-400 font-mono text-sm break-all opacity-80 bg-gray-50 py-2 rounded-xl border border-gray-100 px-4">
+                              {getQRCodeUrl(site.location, canteen)}
+                            </p>
+                            <p className="text-gray-300 text-[10px] mt-2 uppercase font-bold tracking-widest">Feedback Link</p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div key={`${site.location}-main`} className="qr-collectible flex flex-col items-center justify-center">
+                        <h3 className="font-bold text-2xl text-gray-800 text-center mb-4">{site.location}</h3>
+                        <span className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-full font-bold mb-8">Main Site</span>
+                        <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
+                          <QRCode value={getQRCodeUrl(site.location)} size={280} />
+                        </div>
+                        <div className="mt-10 w-full text-center px-8">
+                          <p className="text-gray-400 font-mono text-sm break-all opacity-80 bg-gray-50 py-2 rounded-xl border border-gray-100 px-4">
+                            {getQRCodeUrl(site.location)}
+                          </p>
+                          <p className="text-gray-300 text-[10px] mt-2 uppercase font-bold tracking-widest">Feedback Link</p>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default QRCodePrintPage;

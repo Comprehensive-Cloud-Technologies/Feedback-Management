@@ -1,0 +1,5 @@
+{
+  "name": "Canteen Feedback System",
+  "description": "A modern, visually engaging application for collecting and analyzing canteen feedback using smiley-based ratings. Features a user-friendly interface for quick feedback submission and a comprehensive admin dashboard with real-time analytics, charts, and data export capabilities.",
+  "requestFramePermissions": []
+}

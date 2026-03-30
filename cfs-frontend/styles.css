@@ -1,0 +1,120 @@
+/* Global Styles for Professional UI */
+
+:root {
+  --primary-color: #f4a300;
+  --secondary-color: #f4a300;
+  --accent-color: #f4a300;
+  --error-color: #d32f2f;
+  --success-color: #388e3c;
+  --font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  --border-radius: 8px;
+  --box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background: var(--secondary-color);
+  color: #222;
+}
+
+h1, h2, h3, h4, h5 {
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+button {
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--border-radius);
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  cursor: pointer;
+  box-shadow: var(--box-shadow);
+  transition: background 0.2s;
+}
+button:hover {
+  background: #1565c0;
+}
+
+input, select, textarea {
+  border: 1px solid #ccc;
+  border-radius: var(--border-radius);
+  padding: 0.5em;
+  font-size: 1em;
+  margin-bottom: 1em;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #fff;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  padding: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+}
+.table th, .table td {
+  padding: 0.75em 1em;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+.table th {
+  background: var(--secondary-color);
+  font-weight: 600;
+}
+
+.sidebar {
+  background: var(--primary-color);
+  color: #fff;
+  min-width: 220px;
+  height: 100vh;
+  padding: 2em 1em;
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5em;
+}
+.sidebar a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 1.1em;
+  padding: 0.5em 1em;
+  border-radius: var(--border-radius);
+  transition: background 0.2s;
+}
+.sidebar a.active, .sidebar a:hover {
+  background: #e08e00;
+}
+
+.header {
+  background: #f4a300;
+  box-shadow: var(--box-shadow);
+  padding: 1em 2em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    min-width: 60px;
+    padding: 1em 0.5em;
+    font-size: 0.9em;
+  }
+  .header {
+    padding: 0.5em 1em;
+  }
+  .card {
+    padding: 1em;
+  }
+}

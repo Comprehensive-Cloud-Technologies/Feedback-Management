@@ -1,0 +1,24 @@
+# CODEOWNERS — Defines who must review PRs for specific paths
+# Format: pattern   @github-username
+#
+# Replace CCT3060 with your actual GitHub username
+# Add developer usernames as you onboard them
+
+# ── Default owner for everything ────────────────────────────
+*                               @CCT3060
+
+# ── Backend PHP API ──────────────────────────────────────────
+cfs-backend-php/                @CCT3060
+cfs-backend-php/api/            @CCT3060
+cfs-backend-php/config/         @CCT3060
+cfs-backend-php/database/       @CCT3060
+
+# ── Frontend React ───────────────────────────────────────────
+cfs-frontend/                   @CCT3060
+
+# ── GitHub Actions workflows (only owner can change) ─────────
+.github/workflows/              @CCT3060
+
+# ── Security-sensitive files ─────────────────────────────────
+.env.example                    @CCT3060
+cfs-backend-php/.env.example    @CCT3060

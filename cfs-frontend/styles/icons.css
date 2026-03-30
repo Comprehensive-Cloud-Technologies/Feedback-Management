@@ -1,0 +1,12 @@
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.icon-xs {
+  font-size: 0.75rem;
+}
+
+.icon-mb {
+  margin-bottom: 0.25rem;
+}

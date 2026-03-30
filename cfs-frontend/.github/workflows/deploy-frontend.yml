@@ -1,0 +1,52 @@
+name: Build and Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Write version
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: echo "${GITHUB_SHA} $(date -u +'%Y-%m-%dT%H:%M:%SZ')" > dist/version.txt
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Check SSH connectivity (verbose)
+        run: |
+          echo "=== SSH debug: try simple command ==="
+          ssh -vvv -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -i ~/.ssh/id_rsa -p "${{ secrets.SSH_PORT }}" -o StrictHostKeyChecking=no "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            'echo REMOTE OK; id; uname -a; ls -ld "${{ secrets.REMOTE_DIR_FRONTEND }}" || echo "no target dir"'
+
+      - name: Rsync to server
+        run: |
+          rsync -e "ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa -p ${{ secrets.SSH_PORT }}" -az --delete dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_DIR_FRONTEND }}/"
+
+      - name: Reload nginx
+        run: |
+          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa -p "${{ secrets.SSH_PORT }}" -o StrictHostKeyChecking=yes "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'sudo systemctl reload nginx || sudo nginx -s reload'

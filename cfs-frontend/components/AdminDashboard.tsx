@@ -1,0 +1,1327 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import PieChartStats from './PieChartStats';
+import RatingFace from './RatingFace';
+import { FeedbackSubmission, Question, RatingLevel } from '../types';
+import { RATINGS, getEndpoints } from '../constants';
+import StatCard from './StatCard';
+import FeedbackChart from './FeedbackChart';
+import AverageRatingChart from './AverageRatingChart';
+
+// Pie chart colors for rating levels (Poor, Needs Improvement, Average, Good)
+const PIE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
+
+interface AdminDashboardProps {
+  onLogout: () => void;
+}
+
+type TimeFrame = 'daily' | 'weekly' | 'monthly';
+
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
+  const [feedbackData, setFeedbackData] = useState<FeedbackSubmission[]>([]);
+  const endpoints = useMemo(() => getEndpoints(), []);
+  const [selectedSite, setSelectedSite] = useState<string>('All Sites');
+  const [selectedSegment, setSelectedSegment] = useState<string>('All Segments');
+  const [selectedCanteenName, setSelectedCanteenName] = useState<string>('All Canteens');
+  const [selectedMealSlot, setSelectedMealSlot] = useState<string>('All Slots');
+  const [timeRange, setTimeRange] = useState<string>('All Time');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [showQRCodes, setShowQRCodes] = useState(false);
+  const [sites, setSites] = useState<any[]>([]);
+  const [segments, setSegments] = useState<any[]>([]);
+  const [siteCanteens, setSiteCanteens] = useState<string[]>([]); // List of canteens for the selected site
+  const [showStatistics, setShowStatistics] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [notification, setNotification] = useState<string | null>(null);
+  const [newlyAddedSites, setNewlyAddedSites] = useState<Set<string>>(new Set());
+
+  // Helper to normalize canteen identifier fields from backend
+  const canonicalCanteen = (fb: any) => fb?.canteen ?? fb?.canteen_id ?? fb?.canteenId ?? 'Unknown Canteen';
+
+  // Fetch Segments
+  const fetchSegments = React.useCallback(async () => {
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+      // Segment API might be different, checking from AdminSegments.tsx research
+      const res = await fetch(`${endpoints.ADMIN_CANTEENS}/../../api/segments/index.php?action=list`, {
+        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSegments(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching segments:', err);
+    }
+  }, [endpoints]);
+
+  // Fetch Sites
+  const fetchSites = React.useCallback(async () => {
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+      const res = await fetch(endpoints.SITES, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+      const data = await res.json();
+      if (data && Array.isArray(data.sites)) {
+        const validSites = data.sites.filter(site =>
+          site &&
+          typeof site.location === 'string' &&
+          typeof site.branch_location === 'string'
+        );
+        setSites(validSites);
+        setLastRefresh(Date.now());
+      }
+    } catch (err) {
+      console.error('Error fetching sites:', err);
+      setSites([]);
+    }
+  }, [endpoints]);
+
+  // Fetch Canteens for Selected Site
+  useEffect(() => {
+    if (selectedSite === 'All Sites') {
+      setSiteCanteens([]);
+      return;
+    }
+    const token = localStorage.getItem('canteenAdminJWT');
+    fetch(`${endpoints.CANTEENS}?site=${encodeURIComponent(selectedSite)}`, {
+      headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.canteens)) {
+          setSiteCanteens(data.canteens);
+        } else {
+          setSiteCanteens([]);
+        }
+      })
+      .catch(err => {
+        console.error("Error fetching canteens", err);
+        setSiteCanteens([]);
+      });
+  }, [selectedSite]);
+
+
+  // Fetch Questions for Lookup - Only fetch once for all sites, don't depend on selectedSite
+  const fetchQuestions = React.useCallback(async () => {
+    if (selectedSite === 'All Sites') return;
+
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+
+      const res = await fetch(`${endpoints.QUESTIONS}?site=${encodeURIComponent(selectedSite)}`, {
+        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const allQuestions = Array.isArray(data.questions) ? data.questions : [];
+
+        // Normalize question structure for consistent access
+        const normalized = allQuestions.map((q: any) => ({
+          id: q.id || q.question_id,
+          site: q.site || '',
+          question_text: q.question_text || q.text || '',
+          text: q.question_text || q.text || '',
+          emoji: q.emoji || ''
+        }));
+
+        setQuestions(normalized);
+      } else {
+        setQuestions([]);
+      }
+    } catch (err) {
+      console.error('Error fetching questions:', err);
+      setQuestions([]);
+    }
+  }, [selectedSite]);
+
+  // Fetch Feedback
+  const fetchFeedback = React.useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const endpoint = selectedSite !== 'All Sites'
+        ? `${endpoints.ADMIN_FEEDBACK}?site=${encodeURIComponent(selectedSite)}`
+        : endpoints.ADMIN_FEEDBACK;
+
+      const res = await fetch(endpoint, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('canteenAdminJWT')}`
+        }
+      });
+
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+      const data = await res.json();
+      if (data && (Array.isArray(data.feedback) || Array.isArray(data))) {
+        const feedbackArray = Array.isArray(data.feedback) ? data.feedback : data;
+        setFeedbackData(feedbackArray.map(fb => ({
+          ...fb,
+          responses: (() => {
+            if (Array.isArray(fb.responses)) return fb.responses;
+            if (typeof fb.responses === 'string') {
+              try {
+                const parsed = JSON.parse(fb.responses);
+                if (Array.isArray(parsed)) return parsed;
+              } catch (e) { /* ignore */ }
+            }
+            return [{
+              rating: Number(fb.rating),
+              question_id: fb.question_id,
+              question_text: fb.question_text || ''
+            }];
+          })(),
+          timestamp: fb.timestamp || Date.now()
+        })).filter(fb => fb && typeof fb.site === 'string'));
+      }
+    } catch (err) {
+      console.error('Error fetching feedback:', err);
+      setFeedbackData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedSite]);
+
+  useEffect(() => {
+    fetchSegments();
+    fetchSites();
+    fetchQuestions(); // Fetch questions once on mount
+    const interval = setInterval(() => {
+      fetchFeedback(); // Keep feedback fresh every 30 seconds
+    }, 30000);
+
+    const handleSitesUpdated = (event: CustomEvent) => {
+      const { action, location, message } = event.detail;
+      if (action === 'added') {
+        setNotification(message || `New site "${location}" added successfully!`);
+        setNewlyAddedSites(prev => new Set([...prev, location]));
+        setTimeout(() => {
+          setNewlyAddedSites(prev => {
+            const updated = new Set(prev);
+            updated.delete(location);
+            return updated;
+          });
+        }, 30000);
+      }
+      setTimeout(() => setNotification(null), 5000);
+      fetchSegments();
+      fetchSites();
+      fetchQuestions(); // Refresh questions when sites change
+      fetchFeedback();
+    };
+    window.addEventListener('sitesUpdated', handleSitesUpdated as EventListener);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('sitesUpdated', handleSitesUpdated as EventListener);
+    };
+  }, [fetchSegments, fetchSites, fetchQuestions, fetchFeedback]); // endpoints removed from dependencies as it's now stable
+
+
+
+  // Handle Dependent Resets
+  useEffect(() => {
+    // If segment changes, we might need to reset site if it doesn't belong to the new segment
+    if (selectedSegment !== 'All Segments') {
+      const segId = segments.find(s => s.name === selectedSegment)?.id;
+      if (segId && selectedSite !== 'All Sites') {
+        const currentSite = sites.find(s => s.location === selectedSite);
+        if (currentSite && Number(currentSite.segment_id) !== Number(segId)) {
+          setSelectedSite('All Sites');
+        }
+      }
+    }
+  }, [selectedSegment, segments, sites, selectedSite]);
+
+  useEffect(() => {
+    // If site changes, reset canteen
+    setSelectedCanteenName('All Canteens');
+  }, [selectedSite]);
+
+  // Fetch questions and feedback when site selection changes
+  useEffect(() => {
+    if (selectedSite !== 'All Sites') {
+      fetchFeedback();
+    }
+  }, [fetchFeedback, selectedSite]);
+
+  // Centralized Filtered Data
+  const filteredData = useMemo(() => {
+    if (!Array.isArray(feedbackData)) return [];
+
+    const norm = (s: any) => String(s || '').trim().toLowerCase();
+
+    return feedbackData.filter(fb => {
+      // 1. Segment Filter
+      if (selectedSegment !== 'All Segments') {
+        const segId = fb.segment_id ? String(fb.segment_id) : '';
+        const selectedSegId = String(segments.find(s => s.name === selectedSegment)?.id || '');
+        if (segId !== selectedSegId) return false;
+      }
+
+      // 2. Site Filter
+      if (selectedSite !== 'All Sites' && norm(fb.site) !== norm(selectedSite)) {
+        return false;
+      }
+
+      // 3. Canteen Filter
+      if (selectedCanteenName !== 'All Canteens' && norm(canonicalCanteen(fb)) !== norm(selectedCanteenName)) {
+        return false;
+      }
+
+      // 4. Meal Slot Filter
+      if (selectedMealSlot !== 'All Slots' && (fb.meal_category || 'Other') !== selectedMealSlot) {
+        return false;
+      }
+
+      // 5. Time Range Filter
+      if (timeRange !== 'All Time') {
+        const fbTime = Number(fb.timestamp);
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+        if (timeRange === 'Today') {
+          if (fbTime < startOfDay) return false;
+        } else if (timeRange === 'Last 7 Days') {
+          const sevenDaysAgo = startOfDay - (7 * 24 * 60 * 60 * 1000);
+          if (fbTime < sevenDaysAgo) return false;
+        } else if (timeRange === 'This Month') {
+          const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+          if (fbTime < firstOfMonth) return false;
+        } else if (timeRange === 'This Year') {
+          const firstOfYear = new Date(now.getFullYear(), 0, 1).getTime();
+          if (fbTime < firstOfYear) return false;
+        } else if (timeRange === 'Single Date' && customStartDate) {
+          const targetDate = new Date(customStartDate);
+          const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime();
+          const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+          if (fbTime < dayStart || fbTime >= dayEnd) return false;
+        } else if (timeRange === 'Custom Range' && customStartDate && customEndDate) {
+          const start = new Date(customStartDate).getTime();
+          const endDate = new Date(customEndDate);
+          const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59).getTime();
+          if (fbTime < start || fbTime > end) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [feedbackData, selectedSegment, selectedSite, selectedCanteenName, selectedMealSlot, timeRange, customStartDate, customEndDate, segments]);
+
+  // Analytics Calculation
+  const analytics = useMemo(() => {
+    if (!filteredData.length) return {
+      totalSubmissions: 0,
+      positivePercentage: 0,
+      averageRating: '0.00',
+      detailedStats: { 1: { count: 0, percentage: '0' }, 2: { count: 0, percentage: '0' }, 3: { count: 0, percentage: '0' }, 4: { count: 0, percentage: '0' } },
+      ratingDistribution: RATINGS.map(r => ({ name: r.label, value: 0 })),
+      ratingPercentages: RATINGS.map(r => ({ name: r.label, value: 0 }))
+    };
+
+    const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    let totalRatings = 0;
+
+    filteredData.forEach(fb => {
+      if (fb?.responses?.length) {
+        fb.responses.forEach(response => {
+          if (response) {
+            const val = Number(response.rating);
+            if (!isNaN(val) && val >= 1 && val <= 4) {
+              ratingCounts[val] = (ratingCounts[val] || 0) + 1;
+              totalRatings++;
+            }
+          }
+        });
+      }
+    });
+
+    const goodRatingCount = (ratingCounts[4] || 0);
+
+    // Calculate Detailed Stats and Average
+    let weightedSum = 0;
+    const detailedStats: Record<number, { count: number; percentage: string }> = {};
+    [1, 2, 3, 4].forEach(level => {
+      const count = ratingCounts[level] || 0;
+      weightedSum += count * level;
+      detailedStats[level] = {
+        count,
+        percentage: totalRatings > 0 ? ((count / totalRatings) * 100).toFixed(2) : '0.00'
+      };
+    });
+
+    const averageRating = totalRatings > 0 ? (weightedSum / totalRatings).toFixed(2) : '0.00';
+
+    return {
+      totalSubmissions: filteredData.length,
+      positivePercentage: Number(totalRatings > 0
+        ? ((goodRatingCount) / totalRatings * 100).toFixed(1)
+        : 0),
+      averageRating,
+      detailedStats,
+      ratingDistribution: RATINGS.map(r => ({
+        name: `${r.label} (${totalRatings > 0 ? ((ratingCounts[r.level] || 0) / totalRatings * 100).toFixed(1) : '0.0'}%)`,
+        value: ratingCounts[r.level] || 0
+      })),
+      ratingPercentages: RATINGS.map(r => ({
+        name: r.label,
+        value: totalRatings > 0 ? ((ratingCounts[r.level] || 0) / totalRatings * 100).toFixed(1) : 0
+      }))
+    };
+  }, [filteredData]);
+
+  const exportToCSV = () => {
+    if (!filteredData.length) return;
+
+    // 1. Collect all unique question texts from the filtered data
+    const allQuestionTexts = new Set<string>();
+    filteredData.forEach(fb => {
+      fb.responses?.forEach(r => {
+        const qText = r.question_text || 'Question';
+        allQuestionTexts.add(qText);
+      });
+    });
+    const uniqueQuestions = Array.from(allQuestionTexts).sort();
+
+    // 2. Prepare Headers
+    const headers = [
+      'ID',
+      'Timestamp',
+      'Segment',
+      'Branch',
+      'Canteen',
+      'Meal Slot',
+      'Overall Rating',
+      ...uniqueQuestions
+    ];
+
+    // 3. Prepare Rows
+    const rows = filteredData.map(fb => {
+      // Find segment name
+      const segment = segments.find(s => String(s.id) === String(fb.segment_id));
+      const segmentName = segment ? segment.name : 'Unknown';
+
+      // Calculate overall rating
+      const ratingSum = fb.responses?.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) || 0;
+      const responseCount = fb.responses?.length || 0;
+      const overallRating = responseCount > 0 ? (ratingSum / responseCount).toFixed(2) : '0.00';
+
+      // Format Timestamp
+      const formattedTime = new Date(fb.timestamp).toLocaleString();
+
+      // Base Values
+      const rowValues = [
+        String(fb.id || ''),
+        formattedTime,
+        segmentName,
+        fb.site || '',
+        fb.canteen || '',
+        fb.meal_category || 'Other',
+        overallRating
+      ];
+
+      // Add rating for each unique question
+      uniqueQuestions.forEach(qText => {
+        const response = fb.responses?.find(r => (r.question_text || 'Question') === qText);
+        rowValues.push(response ? String(response.rating) : '');
+      });
+
+      return rowValues;
+    });
+
+    // 4. Generate CSV Content with proper escaping
+    const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const csvContent = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.map(escapeCsv).join(','))
+    ].join('\n');
+
+    // 5. Download the file
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `catalyst_feedback_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ------------------------------------------------------------------
+  // Logic for "Bar Graphs for each Canteen" (All Sites)
+  // ------------------------------------------------------------------
+  const allCanteensBarData = useMemo(() => {
+    if (selectedSite !== 'All Sites') return [];
+
+    const canteenStats: Record<string, { ratings: Record<number, number>; total: number }> = {};
+    const normalize = (s: any) => String(s || '').trim();
+
+    filteredData.forEach(fb => {
+      const cName = normalize(canonicalCanteen(fb));
+      if (!cName) return;
+      if (!canteenStats[cName]) canteenStats[cName] = { ratings: { 1: 0, 2: 0, 3: 0, 4: 0 }, total: 0 };
+
+      fb.responses?.forEach(r => {
+        const val = Number(r.rating);
+        if (!isNaN(val) && val >= 1 && val <= 4) {
+          canteenStats[cName].ratings[val] = (canteenStats[cName].ratings[val] || 0) + 1;
+          canteenStats[cName].total++;
+        }
+      });
+    });
+
+    return Object.entries(canteenStats).map(([name, stats]) => {
+      const total = Math.max(stats.total, 1); // Avoid division by zero
+      // Explicitly check for 0 total to avoid NaN
+      if (stats.total === 0) {
+        return { name, Good: 0, Average: 0, 'Needs Improvement': 0, Poor: 0 };
+      }
+      return {
+        name,
+        Good: parseFloat(((stats.ratings[4] / total) * 100).toFixed(1)),
+        Average: parseFloat(((stats.ratings[3] / total) * 100).toFixed(1)),
+        'Needs Improvement': parseFloat(((stats.ratings[2] / total) * 100).toFixed(1)),
+        Poor: parseFloat(((stats.ratings[1] / total) * 100).toFixed(1))
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [feedbackData, selectedSite]);
+
+
+  // ------------------------------------------------------------------
+  // Logic for "Pie Chart for each Canteen" (Single Site)
+  // ------------------------------------------------------------------
+  const singleSitePieData = useMemo(() => {
+    if (selectedSite === 'All Sites') return [];
+
+    const normalize = (s: any) => String(s || '').trim().toLowerCase();
+    const targetSite = normalize(selectedSite);
+
+    // Get unique canteens from siteCanteens (which comes from API)
+    // If none, extract from feedback data
+    let canteensToShow = siteCanteens && siteCanteens.length > 0 ? siteCanteens : [];
+
+    if (canteensToShow.length === 0) {
+      // Extract unique canteens from feedback for this site
+      const uniqueCanteens = new Set<string>();
+      filteredData.forEach(fb => {
+        const cName = canonicalCanteen(fb);
+        if (cName && cName.trim()) {
+          uniqueCanteens.add(cName);
+        }
+      });
+      canteensToShow = Array.from(uniqueCanteens);
+    }
+
+    // [ADD] Filter to specific canteen if selected
+    if (selectedCanteenName !== 'All Canteens') {
+      canteensToShow = canteensToShow.filter(c => normalize(c) === normalize(selectedCanteenName));
+    }
+
+    return canteensToShow.map(cName => {
+      const normalizedCName = normalize(cName);
+
+      // Filter feedback for this site AND this canteen
+      const canteenFeedbacks = filteredData.filter(fb =>
+        normalize(canonicalCanteen(fb)) === normalizedCName
+      );
+
+      const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+      let total = 0, count = 0;
+
+      canteenFeedbacks.forEach(fb => {
+        fb.responses?.forEach(r => {
+          const val = Number(r.rating);
+          if (!isNaN(val) && val >= 1 && val <= 4) {
+            ratingCounts[val] = (ratingCounts[val] || 0) + 1;
+            total += val;
+            count++;
+          }
+        });
+      });
+
+      const pieData = RATINGS.map(r => ({
+        name: r.label,
+        value: ratingCounts[r.level] || 0
+      }));
+
+      const totalFeedbacks = canteenFeedbacks.length;
+
+      return {
+        canteenName: cName, // Keep original name for display
+        pieData,
+        avgRating: count > 0 ? (total / count).toFixed(2) : 'N/A',
+        totalResponses: totalFeedbacks
+      };
+    });
+  }, [filteredData, selectedSite, siteCanteens]);
+
+  // ------------------------------------------------------------------
+  // Logic for "Question-wise Statistics" (Single Site)
+  // ------------------------------------------------------------------
+  const questionAnalysis = useMemo(() => {
+    if (selectedSite === 'All Sites') return { tableData: [], chartData: [], averageChartData: [] };
+
+    const normalize = (s: any) => String(s || '').trim().toLowerCase();
+    const targetSite = normalize(selectedSite);
+
+    // Filter feedback for the selected site
+    let siteFeedback = filteredData;
+
+    // [NEW] Filter by Meal Slot - ALREADY HANDLED IN filteredData
+    // if (selectedMealSlot !== 'All Slots') {
+    //   siteFeedback = siteFeedback.filter(fb => (fb.meal_category || 'Other') === selectedMealSlot);
+    // }
+
+    // Build question lookup map from questions array
+    const questionMap: Record<number | string, { id: number; text: string; emoji?: string; site?: string }> = {};
+    questions.forEach(q => {
+      const qId = String(q.id || q.question_id || '');
+      if (qId) {
+        questionMap[qId] = {
+          id: q.id || 0,
+          text: q.question_text || q.text || `Question ${qId}`,
+          emoji: q.emoji || '',
+          site: q.site || ''
+        };
+      }
+    });
+
+    // Group feedback by question text
+    const stats: Record<string, { ratings: Record<number, number>; total: number; qText: string; emoji?: string }> = {};
+
+    siteFeedback.forEach(fb => {
+      fb.responses?.forEach(r => {
+        let qText = r.question_text || '';
+        let emoji = '';
+
+        // Try to get question text from response
+        if (!qText && r.questionId) {
+          const qData = questionMap[r.questionId] || questionMap[String(r.questionId)];
+          if (qData) {
+            qText = qData.text;
+            emoji = qData.emoji || '';
+          }
+        }
+
+        // Fallback for older format
+        if (!qText && r.question_id) {
+          const qData = questionMap[r.question_id] || questionMap[String(r.question_id)];
+          if (qData) {
+            qText = qData.text;
+            emoji = qData.emoji || '';
+          }
+        }
+
+        // Final fallback
+        if (!qText) {
+          qText = `Question ${r.questionId || r.question_id || 'undefined'}`;
+        }
+
+        if (!stats[qText]) {
+          stats[qText] = { ratings: { 1: 0, 2: 0, 3: 0, 4: 0 }, total: 0, qText, emoji };
+        }
+
+        const val = Number(r.rating);
+        if (!isNaN(val) && val >= 1 && val <= 4) {
+          stats[qText].ratings[val] = (stats[qText].ratings[val] || 0) + 1;
+          stats[qText].total++;
+        }
+      });
+    });
+
+    // If no feedback but we have questions, create empty rows for all questions
+    if (siteFeedback.length === 0 && questions.length > 0) {
+      questions.forEach(q => {
+        const qText = q.question_text || q.text || `Question ${q.id}`;
+        if (!stats[qText]) {
+          stats[qText] = {
+            ratings: { 1: 0, 2: 0, 3: 0, 4: 0 },
+            total: 0,
+            qText,
+            emoji: q.emoji || ''
+          };
+        }
+      });
+    }
+
+    const getKeyword = (text: string) => {
+      const t = text.toLowerCase();
+      // Priority list of main words
+      const keywords = ['Taste', 'Quality', 'Cleanliness', 'Hygiene', 'Staff', 'Service', 'Polite', 'Menu', 'Variety', 'Freshness', 'Hot', 'Price', 'Value', 'Recommend', 'Ambiance', 'Speed', 'Portion'];
+
+      for (const kw of keywords) {
+        if (t.includes(kw.toLowerCase())) return kw;
+      }
+
+      // Fallback: First significant word > 3 chars
+      const words = text.split(' ').map(w => w.replace(/[^\w]/g, ''));
+      const significant = words.find(w => w.length > 3);
+      return significant ? significant.charAt(0).toUpperCase() + significant.slice(1) : text.substring(0, 10);
+    };
+
+    const aggregated = Object.values(stats).map(s => {
+      const total = Math.max(s.total, 1);
+
+      const excellent = s.ratings[4] || 0;
+      const good = s.ratings[3] || 0;
+      const fair = s.ratings[2] || 0;
+      const poor = s.ratings[1] || 0;
+
+      const weightedSum = (excellent * 4) + (good * 3) + (fair * 2) + (poor * 1);
+      const avg = s.total > 0 ? (weightedSum / s.total).toFixed(2) : '0.00';
+
+      return {
+        question: s.qText,
+        emoji: s.emoji || '',
+        keyword: getKeyword(s.qText),
+        goodCount: excellent,
+        goodPct: s.total > 0 ? ((excellent / total) * 100).toFixed(1) : '0.0',
+        avgCount: good,
+        avgPct: s.total > 0 ? ((good / total) * 100).toFixed(1) : '0.0',
+        needsImpCount: fair,
+        needsImpPct: s.total > 0 ? ((fair / total) * 100).toFixed(1) : '0.0',
+        poorCount: poor,
+        poorPct: s.total > 0 ? ((poor / total) * 100).toFixed(1) : '0.0',
+        average: avg,
+        totalResponses: s.total
+      };
+    }).sort((a, b) => a.question.localeCompare(b.question));
+
+    // Distribution Chart Data
+    const distributionChartData = aggregated.map(item => ({
+      name: item.question.length > 40 ? item.question.substring(0, 40) + '...' : item.question,
+      Poor: parseFloat(item.poorPct),
+      'Needs Improvement': parseFloat(item.needsImpPct),
+      Average: parseFloat(item.avgPct),
+      Good: parseFloat(item.goodPct)
+    })).filter(d => d.Good > 0 || d.Average > 0 || d['Needs Improvement'] > 0 || d.Poor > 0);
+
+    // Aggregate Chart Data by Display Name to remove duplicates
+    const aggregatedChartData: Record<string, any> = {};
+    const aggregatedAvgData: Record<string, { totalValue: number; count: number; name: string; color?: string }> = {};
+
+    aggregated.forEach(item => {
+      const keyword = item.keyword; // This is the normalized category name e.g "Cleanliness"
+
+      // For average chart data
+      if (!aggregatedAvgData[keyword]) {
+        aggregatedAvgData[keyword] = { totalValue: parseFloat(item.average), count: 1, name: keyword };
+      } else {
+        aggregatedAvgData[keyword].totalValue += parseFloat(item.average);
+        aggregatedAvgData[keyword].count++;
+      }
+
+      // For distribution chart data (if needed to aggregate, but typically questions are distinct)
+      // The instruction specifically mentioned `averageChartData` for aggregation.
+      // If `distributionChartData` also needs aggregation by `name` (which is `item.question`),
+      // a similar logic would be applied here. For now, keeping it as is, as questions are usually unique.
+    });
+
+    const finalAvgChartData = Object.values(aggregatedAvgData).map(agg => ({
+      name: agg.name.length > 30 ? agg.name.substring(0, 30) + '...' : agg.name, // Truncate for display
+      fullName: agg.name,
+      value: (agg.totalValue / agg.count),
+    }));
+
+
+    return {
+      tableData: aggregated,
+      chartData: distributionChartData, // Keeping distributionChartData as is, as aggregation was specified for averageChartData
+      averageChartData: finalAvgChartData
+    };
+  }, [filteredData, questions]);
+
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Notification Toast */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg">
+          {notification}
+        </div>
+      )}
+
+      <main className="p-4 w-full max-w-7xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+            <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+
+            {/* Print Only Header Date */}
+            <div className="hidden print-header-date text-right">
+              <p className="text-sm text-gray-600 font-semibold">{new Date().toLocaleString()}</p>
+            </div>
+
+            {/* Filters Row - [NEW] Advanced Filtering */}
+            <div className="flex flex-wrap gap-4 items-end bg-gray-50 p-4 rounded-lg border border-gray-100 print:hidden mt-2">
+              {/* 1. Segment Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Segment</label>
+                <select
+                  value={selectedSegment}
+                  onChange={e => setSelectedSegment(e.target.value)}
+                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All Segments">All Segments</option>
+                  {segments.map((seg) => (
+                    <option key={seg.id} value={seg.name}>{seg.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Branch (Site) Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Branch</label>
+                <select
+                  value={selectedSite}
+                  onChange={e => setSelectedSite(e.target.value)}
+                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All Sites">All Branches</option>
+                  {sites
+                    .filter(site => {
+                      if (selectedSegment === 'All Segments') return true;
+                      const segId = segments.find(s => s.name === selectedSegment)?.id;
+                      return Number(site.segment_id) === Number(segId);
+                    })
+                    .map((site, idx) => (
+                      <option key={`${site.id}-${idx}`} value={site.location}>
+                        {site.location}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* 3. Canteen Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Canteen</label>
+                <select
+                  value={selectedCanteenName}
+                  onChange={e => setSelectedCanteenName(e.target.value)}
+                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All Canteens">All Canteens</option>
+                  {(selectedSite === 'All Sites'
+                    ? Array.from(new Set(feedbackData.map(fb => canonicalCanteen(fb))))
+                    : siteCanteens
+                  ).sort().map((cName, idx) => (
+                    <option key={idx} value={String(cName)}>{String(cName)}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Meal Slot Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Meal Slot</label>
+                <select
+                  value={selectedMealSlot}
+                  onChange={e => setSelectedMealSlot(e.target.value)}
+                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[120px] focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All Slots">All Slots</option>
+                  {Array.from(new Set(
+                    feedbackData
+                      .filter(fb => {
+                        if (selectedSite === 'All Sites') return true;
+                        return String(fb.site).trim().toLowerCase() === String(selectedSite).trim().toLowerCase();
+                      })
+                      .map(fb => fb.meal_category || 'Other')
+                  )).sort().map(slot => (
+                    <option key={String(slot)} value={String(slot)}>{String(slot)}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Time Range Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Time Range</label>
+                <select
+                  value={timeRange}
+                  onChange={e => setTimeRange(e.target.value)}
+                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[120px] focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All Time">All Time</option>
+                  <option value="Today">Today</option>
+                  <option value="Last 7 Days">Last 7 Days</option>
+                  <option value="This Month">This Month</option>
+                  <option value="This Year">This Year</option>
+                  <option value="Single Date">Select Date</option>
+                  <option value="Custom Range">Date Range</option>
+                </select>
+              </div>
+
+              {/* 6. Dynamic Date Pickers */}
+              {(timeRange === 'Single Date' || timeRange === 'Custom Range') && (
+                <div className="flex gap-2 items-center">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">{timeRange === 'Single Date' ? 'Date' : 'Start Date'}</label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={e => setCustomStartDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {timeRange === 'Custom Range' && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase">End Date</label>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={e => setCustomEndDate(e.target.value)}
+                        className="px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 ml-auto">
+                <button
+                  onClick={() => { fetchSegments(); fetchSites(); fetchFeedback(); }}
+                  disabled={isLoading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors flex items-center gap-2"
+                >
+                  {isLoading ? (
+                    <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                  )}
+                  {isLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button
+                  onClick={() => {
+                    setTimeout(() => window.print(), 800);
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
+                >
+                  PDF
+                </button>
+                <button
+                  onClick={exportToCSV}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
+                >
+                  CSV
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+            <StatCard
+              title="Total Submissions"
+              value={analytics.totalSubmissions.toString()}
+              backgroundColor="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+              textColor="#ffffff"
+              iconColor="#ffffff"
+            />
+            <StatCard
+              title="Positive Feedback (Good)"
+              value={`${analytics.positivePercentage.toFixed(1)}%`}
+              description="Ratings of 'Good'"
+              backgroundColor="linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
+              textColor="#ffffff"
+              iconColor="#ffffff"
+            />
+            <StatCard
+              title="Most Common Rating"
+              value={analytics.ratingDistribution
+                .reduce((prev, current) => (prev.value > current.value) ? prev : current).name
+              }
+              backgroundColor="linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"
+              textColor="#ffffff"
+              iconColor="#ffffff"
+            />
+          </div>
+
+          {/* All Sites: Canteen-wise Bar Graphs */}
+          {selectedSite === 'All Sites' && (
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-6 text-gray-800">Canteen Performance (All Sites)</h3>
+              {allCanteensBarData.length > 0 ? (
+                <div className="bg-gray-50 p-4 rounded border border-gray-200">
+                  {/* Reuse FeedbackChart for "Canteens" on Y Axis */}
+                  <FeedbackChart
+                    title="Canteen Rating Distribution"
+                    data={allCanteensBarData}
+                  />
+                  <p className="text-center text-sm text-gray-500 mt-2">
+                    Percentage distribution of Good, Average, Needs Improvement, Poor per canteen.
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">No feedback data available for canteens yet.</div>
+              )}
+            </div>
+          )}
+
+          {/* Single Site: Feedback Statistics & Charts */}
+          {selectedSite !== 'All Sites' && (
+            <div className="space-y-8 mb-8">
+              {/* Feedback Statistics Table */}
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-800">Feedback Statistics</h3>
+
+                  {/* Info badges for active filters */}
+                  <div className="flex gap-2 mb-2 print:hidden">
+                    {selectedSegment !== 'All Segments' && <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded-full">{selectedSegment}</span>}
+                    {selectedSite !== 'All Sites' && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full">{selectedSite}</span>}
+                    {selectedCanteenName !== 'All Canteens' && <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-xs font-bold rounded-full">{selectedCanteenName}</span>}
+                    {selectedMealSlot !== 'All Slots' && <span className="px-2 py-0.5 bg-teal-100 text-teal-800 text-xs font-bold rounded-full">{selectedMealSlot}</span>}
+                    {timeRange !== 'All Time' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs font-bold rounded-full">{timeRange}</span>}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-4 py-3 bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">Feedback Questions</th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="flex flex-col items-center gap-1">
+                            <RatingFace level={1} size={24} />
+                            <span className="text-red-500 font-bold">Poor</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="flex flex-col items-center gap-1">
+                            <RatingFace level={2} size={24} />
+                            <span className="text-orange-500 font-bold">Needs Imp.</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="flex flex-col items-center gap-1">
+                            <RatingFace level={3} size={24} />
+                            <span className="text-yellow-500 font-bold">Average</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="flex flex-col items-center gap-1">
+                            <RatingFace level={4} size={24} />
+                            <span className="text-green-600 font-bold">Good</span>
+                          </div>
+                        </th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Average</th>
+                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {questionAnalysis.tableData.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50 transition w-full">
+                          <td className="px-4 py-4 text-sm font-medium text-blue-800">
+                            {idx + 1}. {row.question}
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-red-600 font-bold">{row.poorPct}%</div>
+                            <div className="text-xs text-gray-400">({row.poorCount})</div>
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-orange-600 font-bold">{row.needsImpPct}%</div>
+                            <div className="text-xs text-gray-400">({row.needsImpCount})</div>
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-yellow-600 font-bold">{row.avgPct}%</div>
+                            <div className="text-xs text-gray-400">({row.avgCount})</div>
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-green-600 font-bold">{row.goodPct}%</div>
+                            <div className="text-xs text-gray-400">({row.goodCount})</div>
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-blue-600 font-bold text-lg">{row.average}</div>
+                            <div className="text-xs text-blue-400">avg</div>
+                          </td>
+                          <td className="px-2 py-4 text-center">
+                            <div className="text-green-600 font-bold text-lg">{row.totalResponses}</div>
+                            <div className="text-xs text-green-400">total</div>
+                          </td>
+                        </tr>
+                      ))}
+                      {questionAnalysis.tableData.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                            No feedback data available for this site yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Rating Distribution Chart (Switched to AverageRatingChart per user request) */}
+              {questionAnalysis.averageChartData && questionAnalysis.averageChartData.length > 0 && (
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-800 mb-6">Question Rating Analysis</h3>
+                  <div className="h-[400px]">
+                    <AverageRatingChart
+                      data={questionAnalysis.averageChartData}
+                    />
+                  </div>
+                  <div className="flex justify-center gap-6 mt-4 text-sm">
+                    {/* Legend handled by component */}
+                    <span className="text-gray-500 text-xs">Based on average rating (0-4)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Single Site: Canteen-wise Pie Charts */}
+          {selectedSite !== 'All Sites' && (
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-6 text-gray-800">
+                Canteen Analysis for {selectedSite}
+              </h3>
+              {singleSitePieData.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 print-pie-grid">
+                  {singleSitePieData.map((cStats, idx) => (
+                    <div key={idx} className="bg-white rounded-lg p-6 shadow-sm border border-gray-100 print-grid-chart">
+                      <h4 className="font-semibold mb-3 text-lg text-center">{cStats.canteenName}</h4>
+                      {cStats.totalResponses > 0 ? (
+                        <>
+                          <PieChartStats
+                            title=""
+                            data={cStats.pieData}
+                            colors={PIE_COLORS}
+                            bare={true}
+                            height={220}
+                          />
+                          <div className="mt-2 text-center border-t pt-2">
+                            <div className="font-bold text-gray-700">Avg Rating: {cStats.avgRating}</div>
+                            <div className="text-xs text-gray-500">Total Responses: {cStats.totalResponses}</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="h-[200px] flex flex-col items-center justify-center text-gray-400">
+                          <p>No Data</p>
+                          <p className="text-xs">Waiting for feedback</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">No canteens found for this site.</div>
+              )}
+            </div>
+          )}
+
+        </div>
+        <div id="admin-print-report" style={{ display: 'none' }}>
+          <div className="mt-8 mb-4 page-break-before">
+            <h2 className="text-xl font-bold mb-2">Feedback Report: {selectedSite}</h2>
+          </div>
+          <table className="w-full text-sm border-collapse border border-gray-300">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2 text-left">Timestamp</th>
+                <th className="border p-2 text-left">Canteen</th>
+                <th className="border p-2 text-left">Meal Slot</th>
+                <th className="border p-2 text-left">User</th>
+                <th className="border p-2 text-left">Rating</th>
+                <th className="border p-2 text-left">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {feedbackData.map((fb, i) => (
+                <tr key={i} className="border-b break-inside-avoid">
+                  <td className="border p-2">{new Date(fb.timestamp).toLocaleString()}</td>
+                  <td className="border p-2">{fb.canteen || fb.canteen_id}</td>
+                  <td className="border p-2">{fb.meal_category || 'Other'}</td>
+                  <td className="border p-2">{fb.username || '-'}</td>
+                  <td className="border p-2 font-bold">{Number(fb.rating).toFixed(1)}</td>
+                  <td className="border p-2">
+                    <div className="text-xs grid grid-cols-1 gap-1">
+                      {(fb.responses || []).map((r: any, ri: number) => (
+                        <div key={ri}>
+                          <span className="font-semibold text-gray-700">{r.question_text?.substring(0, 40) || 'Question'}:</span>
+                          <span className="ml-1 font-bold">{r.rating}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {feedbackData.length === 0 && <tr><td colSpan={5} className="p-4 text-center">No data available</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <style>{`
+
+        @media print {
+            @page {size: A4 portrait; margin: 10mm; }
+
+          /* RESET AND VISIBILITY */
+          nav, aside, header, footer, button, .no-print, .sidebar, div[class*="fixed top-0"] {
+            display: none !important; 
+          }
+
+          html, body, #root {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            overflow: visible !important;
+            visibility: visible !important;
+            text-align: left; /* Reset to left, center containers instead */
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* Main Layout - Force Top Left */
+          main, .min-h-screen {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+          
+          /* Hide all siblings of main if possible, or assume absolute covers them */
+          body > :not(#root), #root > :not(div) {
+             display: none !important;
+          }
+
+          /* Helper for centering content blocks */
+          .content-block {
+            width: 90% !important;
+          max-width: 180mm !important; /* Safe A4 width */
+          margin: 0 auto 20px auto !important;
+          }
+
+          /* Header Special Handling for Print */
+          .print-header-date {display: block !important; margin-left: auto; }
+
+          /* The Header Row */
+          .flex-col.md\\:flex-row {
+            display: flex !important;
+          flex-direction: row !important;
+          justify-content: space-between !important;
+          align-items: center !important;
+          width: 90% !important;
+          max-width: 180mm !important;
+          margin: 0 auto 20px auto !important;
+          border-bottom: 2px solid #ddd;
+          padding-bottom: 10px;
+          }
+
+          /* Dashboard Content Blocks (Charts, Stats) */
+          .bg-white, .chart-container {
+            width: 100% !important; /* Let grid control width */
+            max-width: none !important;
+            margin: 0 !important; 
+            box-shadow: none !important;
+            border: 1px solid #eee !important;
+            padding: 10px !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* Report Table Section */
+          #admin-print-report {
+            display: block !important;
+          width: 90% !important;
+          max-width: 180mm !important;
+          margin: 20px auto !important;
+          }
+
+          /* Charts specific fix */
+          /* Main Chart (Bar) - Full Width */
+          .print-main-chart .recharts-responsive-container,
+          .print-main-chart .recharts-wrapper {
+             width: 680px !important;
+             height: 400px !important;
+             display: block !important;
+          }
+          
+          /* Grid Charts (Pie) - 2 per row approx */
+          .print-grid-chart .recharts-responsive-container,
+          .print-grid-chart .recharts-wrapper {
+             width: 320px !important; 
+             height: 250px !important;
+             display: block !important;
+          }
+          
+          /* Nuclear option for clipping and visibility */
+          .recharts-surface, .recharts-surface * {
+             overflow: visible !important;
+             clip-path: none !important;
+             mask: none !important;
+             opacity: 1 !important; 
+          }
+           
+           /* Force Grid Layout for Pies */
+           .print-pie-grid {
+             display: grid !important;
+             grid-template-columns: repeat(2, 1fr) !important;
+             gap: 20px !important;
+             width: 100% !important;
+           }
+          /* Ensure paths and rects (bars) are visible */
+          path, rect, circle, line {
+             fill-opacity: 1 !important;
+             stroke-opacity: 1 !important;
+             visibility: visible !important;
+          }
+          
+          /* Grid Adjustment - Restore Grid for Print */
+          .grid {
+            display: grid !important;
+            /* Force 3 columns for stats, or auto-fit */
+            grid-template-columns: repeat(3, 1fr) !important;
+            width: 100% !important;
+            margin: 0 auto !important;
+            gap: 10px !important;
+          }
+          /* Handle 2-column or different grids if needed, but primary stats are 3-col */
+          /* Forcing simple 3-col for consistency on A4 landscape/portrait scaled */
+          
+          .grid > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            page-break-inside: avoid; 
+          }
+          
+          /* Special case for pie charts grid which might need different cols */
+          .grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-3 {
+             grid-template-columns: repeat(3, 1fr) !important;
+          }
+          
+          /* Special case for single column sections */
+          .grid-cols-1 {
+             grid-template-columns: 1fr !important;
+          }
+
+          /* Titles */
+          h1, h2, h3, h4, .text-center { text-align: center !important; }
+
+          /* Tables */
+          table {width: 100%; border-collapse: collapse; border: 1px solid #ddd; font-size: 9pt; margin: 0 auto; }
+          th, td {border: 1px solid #000; padding: 4px; text-align: left; }
+          thead {display: table-header-group; }
+          tr { page-break-inside: avoid; }
+        }
+        `}</style>
+      </main>
+    </div >
+  );
+};
+
+export default AdminDashboard;

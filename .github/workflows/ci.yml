@@ -1,0 +1,66 @@
+# ============================================================
+#  CI — Runs on every Pull Request targeting main / develop / testing
+#  Checks: TypeScript compile, Vite build, PHP syntax
+# ============================================================
+name: CI — Build & Type Check
+
+on:
+  pull_request:
+    branches: [main, develop, testing]
+  push:
+    branches: [develop]   # also run on direct develop pushes
+
+jobs:
+  # ─── Frontend: TypeScript + Vite build ───────────────────
+  frontend-ci:
+    name: Frontend — TS Check & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cfs-frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cfs-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Vite production build
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+  # ─── Backend: PHP syntax lint ────────────────────────────
+  backend-ci:
+    name: Backend — PHP Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.1
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: php-cs-fixer
+
+      - name: PHP syntax check (all .php files)
+        run: |
+          find cfs-backend-php -name "*.php" \
+            -not -path "*/vendor/*" \
+            -not -name "test*.php" \
+            -not -name "debug*.php" \
+          | xargs -I {} php -l {}
+          echo "✅ PHP syntax check passed"
