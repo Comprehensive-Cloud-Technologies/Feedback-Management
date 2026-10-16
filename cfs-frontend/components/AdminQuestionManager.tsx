@@ -2,7 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { getEndpoints } from '../constants';
 import { FaSave, FaTimes, FaPlus, FaTrash, FaArrowUp, FaArrowDown, FaCog } from 'react-icons/fa';
 import { CustomQuestionRenderer } from './CustomQuestionRenderer';
-import { CustomFieldDefinition, CustomFieldType, QuestionResponseType } from '../types';
+import { CustomFieldDefinition, CustomFieldType, QuestionResponseType, FormSettings, ThemeId, ThemeCustomTexts } from '../types';
+import ThemeManagerSection from './ThemeManagerSection';
 
 // ============= SEARCHABLE DROPDOWN COMPONENT =============
 interface SearchableDropdownProps {
@@ -785,16 +786,7 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
   const [branchAdminSite, setBranchAdminSite] = useState<string>('');
 
   // Form Settings State
-  const [formSettings, setFormSettings] = useState<{
-    enable_fullscreen: number;
-    collect_user_info: number;
-    field_name: number;
-    field_department: number;
-    field_suggestion: number;
-    field_meal_slot: number;
-    field_employee_id: number;
-    custom_fields?: CustomFieldDefinition[];
-  }>({
+  const [formSettings, setFormSettings] = useState<FormSettings>({
     enable_fullscreen: 0,
     collect_user_info: 0,
     field_name: 0,
@@ -802,7 +794,9 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
     field_suggestion: 0,
     field_meal_slot: 0,
     field_employee_id: 0,
-    custom_fields: []
+    custom_fields: [],
+    theme_id: 'default',
+    theme_custom_texts: null,
   });
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -821,7 +815,9 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         field_suggestion: 0,
         field_meal_slot: 0,
         field_employee_id: 0,
-        custom_fields: []
+        custom_fields: [],
+        theme_id: 'default',
+        theme_custom_texts: null,
       });
       return;
     }
@@ -831,7 +827,9 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         if (data.settings) {
           setFormSettings({
             ...data.settings,
-            custom_fields: Array.isArray(data.settings.custom_fields) ? data.settings.custom_fields : []
+            custom_fields: Array.isArray(data.settings.custom_fields) ? data.settings.custom_fields : [],
+            theme_id: data.settings.theme_id || 'default',
+            theme_custom_texts: data.settings.theme_custom_texts || null,
           });
         }
       })
@@ -1931,6 +1929,20 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
           !loading && <div className="text-center py-8 text-gray-500">{selectedSite ? 'No questions found for this site.' : 'Select a site to view questions.'}</div>
         )}
       </div>
+
+      {/* Step 4: Choose Form Theme & Appearance */}
+      {selectedSite && selectedCanteen && selectedCanteenId && (
+        <ThemeManagerSection
+          selectedSite={selectedSite}
+          selectedCanteen={selectedCanteen}
+          selectedCanteenId={selectedCanteenId}
+          formSettings={formSettings}
+          setFormSettings={setFormSettings}
+          questions={questions}
+          saveFormSettings={saveFormSettings}
+          savingSettings={savingSettings}
+        />
+      )}
     </div>
   );
 };

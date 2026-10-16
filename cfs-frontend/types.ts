@@ -40,6 +40,22 @@ export interface CustomFieldDefinition {
   order: number;
 }
 
+export type ThemeId = 'default' | 'sunny_split' | 'navy_split' | 'midnight_dark' | 'chalkboard_menu';
+
+export interface ThemeCustomTexts {
+  title?: string;
+  subtitle?: string;
+  badge_text?: string;
+  submit_text?: string;
+}
+
+export interface ResolvedThemeTexts {
+  title: string;
+  subtitle: string;
+  badge_text: string;
+  submit_text: string;
+}
+
 export interface FormSettings {
   enable_fullscreen: number | boolean;
   collect_user_info: number | boolean;
@@ -49,6 +65,8 @@ export interface FormSettings {
   field_meal_slot: number | boolean;
   field_employee_id: number | boolean;
   custom_fields?: CustomFieldDefinition[];
+  theme_id?: ThemeId;
+  theme_custom_texts?: ThemeCustomTexts | null;
 }
 
 export type QuestionResponseType =
