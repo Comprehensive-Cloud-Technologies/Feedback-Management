@@ -12,6 +12,21 @@ const AdminFeedback: React.FC = () => {
   const [feedback, setFeedback] = useState([]);
   const endpoints = getEndpoints();
   const [error, setError] = useState('');
+  const [notification, setNotification] = useState<string | null>(null);
+  const [fieldsMap, setFieldsMap] = useState<Record<string, string>>({});
+
+  const showNotification = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingRating, setEditingRating] = useState<number>(0);
   const [detailsId, setDetailsId] = useState<string | null>(null);
@@ -123,6 +138,9 @@ const AdminFeedback: React.FC = () => {
       }
 
       const data = await res.json();
+      if (data && data.fields_map && typeof data.fields_map === 'object') {
+        setFieldsMap(data.fields_map);
+      }
 
       // Ensure we have an array of feedback
       const feedbackArray = Array.isArray(data) ? data :
@@ -289,6 +307,7 @@ const AdminFeedback: React.FC = () => {
       }
 
       setDeleteId(null);
+      showNotification('Feedback deleted successfully! 🗑️');
       await fetchFeedback(); // Refresh the feedback list
     } catch (err: any) {
       console.error('Delete error:', err);
@@ -297,8 +316,27 @@ const AdminFeedback: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-2xl mt-10">
-      <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-xl py-3 px-4 mb-4 shadow flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
+      {/* Toast Notification Container in Top-Right Corner */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+        {notification && (
+          <div className="pointer-events-auto bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-green-500 animate-fade-in-down">
+            <span className="text-xl">✅</span>
+            <span className="font-semibold text-sm">{notification}</span>
+          </div>
+        )}
+        {error && (
+          <div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="font-semibold text-sm">{error}</span>
+            </div>
+            <button onClick={() => setError('')} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 px-4 mb-6 shadow flex flex-col md:flex-row items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-white whitespace-nowrap">Manage Feedback</h2>
 
         {/* Filters */}
@@ -384,7 +422,10 @@ const AdminFeedback: React.FC = () => {
 
               // Build header row with dynamic custom field and question columns
               const headerCols = ['"ID"', '"Timestamp"', '"Site"', '"Canteen"', '"Name"', '"Employee ID"', '"Department"', '"Meal Slot"', '"Suggestion"', '"Overall Rating"'];
-              allCustomFieldKeys.forEach(cfk => headerCols.push(`"[Field] ${cfk.replace(/"/g, '""')}"`));
+              allCustomFieldKeys.forEach(cfk => {
+                const label = fieldsMap[cfk] || (cfk.startsWith('cf_') ? cfk : cfk.replace(/([A-Z])/g, ' $1').trim());
+                headerCols.push(`"[Field] ${label.replace(/"/g, '""')}"`);
+              });
               allQuestionTexts.forEach(qt => headerCols.push(`"[Q] ${qt.replace(/"/g, '""')}"`));
               csvContent += headerCols.join(',') + '\r\n';
 
@@ -472,7 +513,6 @@ const AdminFeedback: React.FC = () => {
           `}</style>
         </div>
       </div>
-      {error && <p className="text-red-500 text-sm mb-4 bg-red-50 p-2 rounded border border-red-200">{error}</p>}
       <div className="overflow-x-auto feedback-table-container">
         <table className="w-full border-collapse mb-6 text-sm">
           <thead>
@@ -567,14 +607,17 @@ const AdminFeedback: React.FC = () => {
                 )}
                 {fb.custom_field_values && typeof fb.custom_field_values === 'object' && Object.keys(fb.custom_field_values).length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Field Values:</p>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">User Information:</p>
                     <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(fb.custom_field_values).map(([k, v]: [string, any]) => (
-                        <div key={k} className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
-                          <span className="font-semibold text-gray-600 block">{k}:</span>
-                          <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
-                        </div>
-                      ))}
+                      {Object.entries(fb.custom_field_values).map(([k, v]: [string, any]) => {
+                        const label = fieldsMap[k] || (fb as any).custom_field_labels?.[k] || (k.startsWith('cf_') ? k : k.replace(/([A-Z])/g, ' $1').trim());
+                        return (
+                          <div key={k} className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
+                            <span className="font-semibold text-gray-600 block">{label}:</span>
+                            <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

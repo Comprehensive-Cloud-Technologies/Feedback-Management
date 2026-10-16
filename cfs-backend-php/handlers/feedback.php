@@ -95,6 +95,29 @@ function handleGet()
         }
     }
 
+    // Fetch all custom field mappings across form_settings
+    $fieldsMap = [];
+    try {
+        $hasCustomFieldsCol = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'custom_fields'");
+        if ($hasCustomFieldsCol) {
+            $settingsRows = Database::fetchAll("SELECT canteen_id, custom_fields FROM form_settings WHERE custom_fields IS NOT NULL");
+            foreach ($settingsRows as $sRow) {
+                if (!empty($sRow['custom_fields'])) {
+                    $cfs = is_string($sRow['custom_fields']) ? json_decode($sRow['custom_fields'], true) : $sRow['custom_fields'];
+                    if (is_array($cfs)) {
+                        foreach ($cfs as $cf) {
+                            if (!empty($cf['id']) && !empty($cf['label'])) {
+                                $fieldsMap[$cf['id']] = $cf['label'];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (Throwable $t) {
+        // Fallback gracefully
+    }
+
     // Decode JSON responses & custom_field_values
     foreach ($feedback as &$row) {
         if (isset($row['responses']) && is_string($row['responses'])) {
@@ -110,10 +133,28 @@ function handleGet()
         } elseif (!isset($row['custom_field_values']) || !is_array($row['custom_field_values'])) {
             $row['custom_field_values'] = [];
         }
+
+        // Attach human-readable labels for custom field keys
+        $customLabels = [];
+        if (!empty($row['custom_field_values']) && is_array($row['custom_field_values'])) {
+            foreach ($row['custom_field_values'] as $cfk => $cfv) {
+                if (isset($fieldsMap[$cfk])) {
+                    $customLabels[$cfk] = $fieldsMap[$cfk];
+                } elseif (preg_match('/^cf_\d+$/', $cfk)) {
+                    $customLabels[$cfk] = $cfk;
+                } else {
+                    $customLabels[$cfk] = trim(preg_replace('/(?<!^)[A-Z]/', ' $0', $cfk));
+                }
+            }
+        }
+        $row['custom_field_labels'] = $customLabels;
     }
     unset($row);
 
-    Response::success(['feedback' => $feedback]);
+    Response::success([
+        'feedback' => $feedback,
+        'fields_map' => $fieldsMap
+    ]);
 }
 
 /**

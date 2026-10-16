@@ -12,7 +12,7 @@ export const ENDPOINTS = {
     ADMIN_USERS: `${API_URL}/admin/users`,
     ADMIN_FEEDBACK: `${API_URL}/admin/feedback`,
     QUESTIONS: `${API_URL}/questions`,
-    FEEDBACK: `${FRONTEND_URL}/#/feedback`,
+    FEEDBACK: `${FRONTEND_URL}/feedback`,
     SUBMIT_FEEDBACK: `${API_URL}/feedback`,
     CANTEENS: `${API_URL}/canteens`,
     ADMIN_CANTEENS: `${API_URL}/admin/canteens`,

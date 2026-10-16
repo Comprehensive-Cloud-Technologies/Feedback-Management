@@ -3,7 +3,10 @@
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /feedback/
+  RewriteBase /
+  
+  # Don't rewrite API requests
+  RewriteRule ^api/ - [L]
   
   # Allow access to actual files and directories
   RewriteCond %{REQUEST_FILENAME} !-f

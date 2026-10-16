@@ -12,16 +12,22 @@ interface SiteData {
   location: string;
   branch_location: string;
   canteens?: string[];
+  logo?: string;
 }
+
+const toSlug = (name: string) => {
+  return name.toLowerCase().replace(/[&]+/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+};
 
 const getQRCodeUrl = (site: string, canteen?: string) => {
   const protocol = window.location.protocol;
-  const host = window.location.host; // This includes port e.g. 192.168.1.10:5173
+  const host = window.location.host;
   const base = `${protocol}//${host}`;
 
-  let url = `${base}/#/feedback?site=${encodeURIComponent(site)}`;
-  if (canteen) url += `&canteen=${encodeURIComponent(canteen)}`;
-  return url;
+  if (canteen) {
+    return `${base}/f/${toSlug(site)}/${toSlug(canteen)}`;
+  }
+  return `${base}/feedback?site=${encodeURIComponent(site)}`;
 };
 
 const QRCodePrintPage: React.FC = () => {
@@ -29,7 +35,7 @@ const QRCodePrintPage: React.FC = () => {
   const endpoints = getEndpoints();
   const [sites, setSites] = useState<SiteData[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('All Branches');
-  const [modalData, setModalData] = useState<{ site: string, canteen?: string, title: string } | null>(null);
+  const [modalData, setModalData] = useState<{ site: string, canteen?: string, title: string, logo?: string } | null>(null);
   const [printAllQRs, setPrintAllQRs] = useState(false);
 
   // We'll use a dedicated print window to avoid issues with modal transforms
@@ -269,7 +275,18 @@ const QRCodePrintPage: React.FC = () => {
             try {
               const cRes = await fetch(`${endpoints.CANTEENS}?site=${encodeURIComponent(site.location)}`, { headers });
               const cData = await cRes.json();
-              return { ...site, canteens: cData.canteens || [] };
+
+              // Fetch branch logo
+              let logo = '';
+              try {
+                const bRes = await fetch(`${endpoints.ADMIN_BRANCH_ADMINS}?site=${encodeURIComponent(site.location)}`, { headers });
+                const bData = await bRes.json();
+                if (bData.branch_admins && bData.branch_admins.length > 0 && bData.branch_admins[0].logo) {
+                  logo = bData.branch_admins[0].logo;
+                }
+              } catch {}
+
+              return { ...site, canteens: cData.canteens || [], logo };
             } catch {
               return { ...site, canteens: [] };
             }
@@ -352,7 +369,7 @@ const QRCodePrintPage: React.FC = () => {
                       <p className="text-xs text-gray-400 mt-4 font-mono break-all text-center px-2">{canteen}</p>
                       <div className="flex gap-2 mt-4 w-full">
                         <button
-                          onClick={() => setModalData({ site: site.location, canteen, title: `${canteen}` })}
+                          onClick={() => setModalData({ site: site.location, canteen, title: `${canteen}`, logo: site.logo })}
                           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
                         >
                           Print QR
@@ -374,7 +391,7 @@ const QRCodePrintPage: React.FC = () => {
                     <p className="text-xs text-gray-400 mt-4">{site.location}</p>
                     <div className="flex gap-2 mt-4 w-full">
                       <button
-                        onClick={() => setModalData({ site: site.location, title: site.location })}
+                        onClick={() => setModalData({ site: site.location, title: site.location, logo: site.logo })}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium text-sm transition"
                       >
                         Print QR
@@ -425,16 +442,31 @@ const QRCodePrintPage: React.FC = () => {
                   PRINT CARD
                 </button>
 
+                {/* Top Header: Catalyst Logo (left) + Branch Logo (right) */}
+                <div style={{ position: 'absolute', top: '15mm', left: '20mm', right: '20mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <img src={catalystLogo} alt="Catalyst" style={{ height: '45px', objectFit: 'contain' }} />
+                  {modalData.logo && (
+                    <img src={modalData.logo} alt="Branch Logo" style={{ height: '55px', objectFit: 'contain', maxWidth: '200px' }} />
+                  )}
+                </div>
+
+                {/* Title */}
+                <div style={{ marginBottom: '10px', textAlign: 'center' }}>
+                  <h2 style={{ fontSize: '28pt', fontWeight: 900, color: '#1a1a1a', margin: '0', fontFamily: 'sans-serif' }}>We Value Your Feedback</h2>
+                </div>
+
                 <div className="qr-box-inner">
                   <QRCode value={getQRCodeUrl(modalData.site, modalData.canteen)} size={480} />
                 </div>
 
-                <div className="url-pill-minimal">
-                  {getQRCodeUrl(modalData.site, modalData.canteen)}
+                {/* Scan text */}
+                <div className="scan-text-minimal" style={{ marginTop: '15px' }}>
+                  Scan to provide feedback
                 </div>
 
-                <div className="scan-text-minimal">
-                  Scan to provide feedback
+                {/* Website URL */}
+                <div style={{ marginTop: '15px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '11pt', color: '#999', fontFamily: 'sans-serif', fontWeight: 500, margin: 0 }}>www.catalystsolutions.eco</p>
                 </div>
               </div>
             </div>
@@ -523,33 +555,33 @@ const QRCodePrintPage: React.FC = () => {
                   <React.Fragment key={site.location}>
                     {(site.canteens && site.canteens.length > 0) ? (
                       site.canteens.map(canteen => (
-                        <div key={`${site.location}-${canteen}`} className="qr-collectible flex flex-col items-center justify-center">
-                          <h3 className="font-bold text-2xl text-gray-800 text-center mb-4">{site.location}</h3>
-                          <span className="bg-blue-100 text-blue-800 text-sm px-4 py-2 rounded-full font-bold mb-8">{canteen}</span>
+                        <div key={`${site.location}-${canteen}`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
+                          {/* Header logos */}
+                          <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
+                            {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
+                          </div>
+                          <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
                           <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
                             <QRCode value={getQRCodeUrl(site.location, canteen)} size={280} />
                           </div>
-                          <div className="mt-10 w-full text-center px-8">
-                            <p className="text-gray-400 font-mono text-sm break-all opacity-80 bg-gray-50 py-2 rounded-xl border border-gray-100 px-4">
-                              {getQRCodeUrl(site.location, canteen)}
-                            </p>
-                            <p className="text-gray-300 text-[10px] mt-2 uppercase font-bold tracking-widest">Feedback Link</p>
-                          </div>
+                          <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
+                          <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
                         </div>
                       ))
                     ) : (
-                      <div key={`${site.location}-main`} className="qr-collectible flex flex-col items-center justify-center">
-                        <h3 className="font-bold text-2xl text-gray-800 text-center mb-4">{site.location}</h3>
-                        <span className="bg-gray-100 text-gray-700 text-sm px-4 py-2 rounded-full font-bold mb-8">Main Site</span>
+                      <div key={`${site.location}-main`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
+                        {/* Header logos */}
+                        <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
+                          {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
+                        </div>
+                        <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
                         <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
                           <QRCode value={getQRCodeUrl(site.location)} size={280} />
                         </div>
-                        <div className="mt-10 w-full text-center px-8">
-                          <p className="text-gray-400 font-mono text-sm break-all opacity-80 bg-gray-50 py-2 rounded-xl border border-gray-100 px-4">
-                            {getQRCodeUrl(site.location)}
-                          </p>
-                          <p className="text-gray-300 text-[10px] mt-2 uppercase font-bold tracking-widest">Feedback Link</p>
-                        </div>
+                        <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
+                        <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
                       </div>
                     )}
                   </React.Fragment>

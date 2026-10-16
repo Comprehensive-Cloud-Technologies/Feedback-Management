@@ -4,10 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 interface ChartData {
   name: string;
-  Good: number;
-  Average: number;
-  'Needs Improvement': number;
-  Poor: number;
+  [key: string]: string | number;
 }
 
 
@@ -17,25 +14,30 @@ interface FeedbackChartProps {
   question?: {
     text: string;
   };
+  ratingKeys?: string[];
+  ratingColors?: string[];
 }
 
-const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, question }) => {
+const DEFAULT_KEYS = ['Good', 'Average', 'Needs Improvement', 'Poor'];
+const DEFAULT_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444'];
+
+const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, question, ratingKeys, ratingColors }) => {
+  const keys = ratingKeys || DEFAULT_KEYS;
+  const colors = ratingColors || DEFAULT_COLORS;
+
   // Filter and sanitize data for chart
   const validData = Array.isArray(data)
     ? data
       .filter(item => item && typeof item === 'object')
       .map(item => {
-        // Create a new object to avoid mutating the input
         const processedItem = { ...item };
 
-        // Ensure name is a valid string
         if (typeof processedItem.name !== 'string' || !processedItem.name.trim()) {
           return null;
         }
 
         // Validate and normalize all rating values
-        const ratingKeys = ['Good', 'Average', 'Needs Improvement', 'Poor'];
-        for (const key of ratingKeys) {
+        for (const key of keys) {
           const value = Number(processedItem[key]);
           if (isNaN(value)) {
             processedItem[key] = 0;
@@ -44,14 +46,12 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
           }
         }
 
-        // Check if there's at least one non-zero rating
-        const hasRatings = ratingKeys.some(key => processedItem[key] > 0);
+        const hasRatings = keys.some(key => (processedItem[key] as number) > 0);
         return hasRatings ? processedItem : null;
       })
-      .filter(Boolean) // Remove null entries
+      .filter(Boolean)
     : [];
 
-  // Validate the processed data
   if (!validData.length) {
     return (
       <div className="h-[400px] w-full flex items-center justify-center text-gray-500">
@@ -60,11 +60,10 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
     );
   }
 
-  // Ensure we have at least one valid entry with a name and some ratings
   const hasValidEntries = validData.some(item =>
     item &&
     typeof item.name === 'string' &&
-    (Number(item.Good) > 0 || Number(item.Average) > 0 || Number(item['Needs Improvement']) > 0 || Number(item.Poor) > 0)
+    keys.some(key => Number(item[key]) > 0)
   );
 
   if (!hasValidEntries) {
@@ -75,20 +74,16 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
     );
   }
 
-  // Final safety: ensure all rating keys exist and are numbers for every row
-  const ratingKeys = ['Good', 'Average', 'Needs Improvement', 'Poor'];
   const sanitizedData = validData.map(row => {
     const out: any = { ...row };
-    ratingKeys.forEach(k => {
+    keys.forEach(k => {
       out[k] = Number(out[k]) || 0;
     });
-    // Ensure name is string
     out.name = String(out.name || '').trim();
     return out;
   });
 
-  // Ensure at least one numeric key is present across the dataset
-  const hasNumeric = ratingKeys.some(k => sanitizedData.some(d => typeof d[k] === 'number'));
+  const hasNumeric = keys.some(k => sanitizedData.some(d => typeof d[k] === 'number'));
   if (!hasNumeric) {
     return (
       <div className="h-[400px] w-full flex items-center justify-center text-gray-500">
@@ -97,7 +92,6 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
     );
   }
 
-  // Error boundary for chart rendering
   try {
     return (
       <div className="h-[400px] w-full">
@@ -151,11 +145,11 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
               }}
             />
             <Legend />
-            {ratingKeys.map((key, idx) => (
+            {keys.map((key, idx) => (
               <Bar
                 key={key}
                 dataKey={key}
-                fill={idx === 0 ? '#22c55e' : idx === 1 ? '#eab308' : idx === 2 ? '#f97316' : '#ef4444'}
+                fill={colors[idx] || '#6b7280'}
                 stackId="stack"
               />
             ))}

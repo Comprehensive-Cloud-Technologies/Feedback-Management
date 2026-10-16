@@ -22,18 +22,28 @@ try {
     $username = $data['username'] ?? null;
     $password = $data['password'] ?? null;
 
-    if (!$site || !$username || !$password) {
+    if (!$username || !$password) {
         http_response_code(400);
-        echo json_encode(['error' => 'Missing site, username, or password']);
+        echo json_encode(['error' => 'Missing username or password']);
         exit();
     }
 
     try {
-        // Fetch branch admin from database
-        $admin = Database::fetchOne(
-            'SELECT id, password FROM branch_admins WHERE site = ? AND username = ?',
-            [$site, $username]
-        );
+        // Fetch branch admin from database (site is optional)
+        if ($site) {
+            $admin = Database::fetchOne(
+                'SELECT id, site, password FROM branch_admins WHERE site = ? AND username = ?',
+                [$site, $username]
+            );
+        } else {
+            $admin = Database::fetchOne(
+                'SELECT id, site, password FROM branch_admins WHERE username = ?',
+                [$username]
+            );
+        }
+        if (!$site && $admin) {
+            $site = $admin['site'];
+        }
 
         if (!$admin) {
             http_response_code(401);

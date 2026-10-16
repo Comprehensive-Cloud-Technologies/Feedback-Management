@@ -152,7 +152,7 @@ const UserLogin: React.FC<UserLoginProps> = ({ onLogin }) => {
           </form>
 
           <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-            <a href="/#/admin-login" className="text-sm font-semibold text-orange-600 hover:text-orange-700 transition">Access Admin Portal &rarr;</a>
+            <a href="/admin-login" className="text-sm font-semibold text-orange-600 hover:text-orange-700 transition">Access Admin Portal &rarr;</a>
           </div>
         </div>
       </div>

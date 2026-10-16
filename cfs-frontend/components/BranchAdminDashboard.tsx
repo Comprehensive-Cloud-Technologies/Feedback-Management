@@ -47,6 +47,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [notification, setNotification] = useState<string | null>(null);
+    const [fieldsMap, setFieldsMap] = useState<Record<string, string>>({});
     const [branchLogo, setBranchLogo] = useState<string>('');
 
     // Filters
@@ -85,6 +86,9 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             const fbRes = await fetch(`${endpoints.ADMIN_FEEDBACK}?site=${encodeURIComponent(site)}`, { headers });
             if (!fbRes.ok) throw new Error('Failed to fetch feedback');
             const fbData = await fbRes.json();
+            if (fbData && fbData.fields_map && typeof fbData.fields_map === 'object') {
+                setFieldsMap(fbData.fields_map);
+            }
             const fbArray = Array.isArray(fbData.feedback) ? fbData.feedback : (Array.isArray(fbData) ? fbData : []);
 
             const processedFb = fbArray.map((fb: any) => ({
@@ -1305,14 +1309,17 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                 )}
                                 {activeFeedback.custom_field_values && typeof activeFeedback.custom_field_values === 'object' && Object.keys(activeFeedback.custom_field_values).length > 0 && (
                                     <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 mb-3">
-                                        <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">Custom Fields</p>
+                                        <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">User Information</p>
                                         <div className="grid grid-cols-2 gap-2 text-xs">
-                                            {Object.entries(activeFeedback.custom_field_values).map(([k, v]) => (
-                                                <div key={k}>
-                                                    <span className="font-bold text-gray-600 block">{k}:</span>
-                                                    <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
-                                                </div>
-                                            ))}
+                                            {Object.entries(activeFeedback.custom_field_values).map(([k, v]) => {
+                                                const label = fieldsMap[k] || (activeFeedback as any).custom_field_labels?.[k] || (k.startsWith('cf_') ? k : k.replace(/([A-Z])/g, ' $1').trim());
+                                                return (
+                                                    <div key={k}>
+                                                        <span className="font-bold text-gray-600 block">{label}:</span>
+                                                        <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
@@ -1558,7 +1565,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             {/* Notification Toast */}
             {
                 notification && (
-                    <div className="fixed bottom-6 right-6 z-[100] bg-gray-900 text-white px-8 py-4 rounded-2xl shadow-2xl animate-slide-up flex items-center gap-3">
+                    <div className="fixed top-4 right-4 z-[9999] bg-gray-900 text-white px-6 py-3 rounded-xl shadow-2xl animate-fade-in-down flex items-center gap-3 border border-white/10">
                         <span className="text-green-400 font-bold text-xl">✅</span>
                         <span className="font-bold tracking-tight">{notification}</span>
                     </div>

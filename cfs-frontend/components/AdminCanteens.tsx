@@ -20,6 +20,9 @@ interface Canteen {
   segment_id?: number;
   segment_name?: string;
   meal_slots?: MealSlot[];
+  is_active?: number;
+  slug?: string;
+  site_slug?: string;
 }
 
 const AdminCanteens: React.FC = () => {
@@ -28,6 +31,13 @@ const AdminCanteens: React.FC = () => {
   const endpoints = getEndpoints();
   const [error, setError] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   const [form, setForm] = useState({ segment_id: '', site: '', name: '' });
   const [sites, setSites] = useState<string[]>([]);
   const [sitesWithSegments, setSitesWithSegments] = useState<any[]>([]);
@@ -37,6 +47,10 @@ const AdminCanteens: React.FC = () => {
   // Slot Editing State
   const [editingCanteen, setEditingCanteen] = useState<Canteen | null>(null);
   const [slotForm, setSlotForm] = useState<MealSlot>({ category: '', startTime: '', endTime: '' });
+
+  // Canteen Name Editing State
+  const [renamingCanteen, setRenamingCanteen] = useState<Canteen | null>(null);
+  const [newCanteenName, setNewCanteenName] = useState('');
 
   // Fetch available sites and segments for dropdown
   useEffect(() => {
@@ -116,7 +130,10 @@ const AdminCanteens: React.FC = () => {
                 segment_id: c.segment_id,
                 segment_name: siteToSegment[c.site || site] || '-',
                 meal_slots: c.meal_slots || [],
-                id: c.id
+                id: c.id,
+                is_active: c.is_active ?? 1,
+                slug: c.slug || '',
+                site_slug: c.site_slug || ''
               })));
             } else if (Array.isArray(data.canteens)) {
               // Fallback
@@ -237,8 +254,8 @@ const AdminCanteens: React.FC = () => {
 
   const handleAddSlot = () => {
     if (!editingCanteen) return;
-    if (!slotForm.category || !slotForm.startTime || !slotForm.endTime) {
-      alert('Please fill all fields');
+    if (!slotForm.category) {
+      alert('Please enter a category name');
       return;
     }
     const updatedSlots = [...(editingCanteen.meal_slots || []), slotForm];
@@ -285,24 +302,93 @@ const AdminCanteens: React.FC = () => {
     setLoading(false);
   };
 
+  const handleRenameCanteen = async () => {
+    if (!renamingCanteen || !newCanteenName.trim()) return;
+    if (newCanteenName.trim() === renamingCanteen.name) {
+      setRenamingCanteen(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+      const res = await fetch(endpoints.ADMIN_CANTEENS, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          site: renamingCanteen.site,
+          name: renamingCanteen.name,
+          new_name: newCanteenName.trim()
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to rename canteen');
+      }
+      showNotification('Canteen renamed successfully!');
+      setRenamingCanteen(null);
+      setNewCanteenName('');
+      await fetchCanteens();
+    } catch (err: any) {
+      setError(err.message || 'Failed to rename canteen');
+    }
+    setLoading(false);
+  };
+
+  const handleToggleActive = async (canteen: Canteen) => {
+    const newStatus = canteen.is_active ? 0 : 1;
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+      const res = await fetch(endpoints.ADMIN_CANTEENS, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          site: canteen.site,
+          name: canteen.name,
+          is_active: newStatus
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      showNotification(`Canteen ${newStatus ? 'activated' : 'deactivated'} successfully!`);
+      await fetchCanteens();
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle canteen status');
+    }
+    setLoading(false);
+  };
+
   return (
     <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
-      {/* Success Popup */}
-      {notification && (
-        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg animate-fade-in-down flex items-center gap-2">
-          <span className="text-xl">✅</span><span className="font-semibold">{notification}</span>
-        </div>
-      )}
+      {/* Toast Notification Container in Top-Right Corner */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+        {notification && (
+          <div className="pointer-events-auto bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-green-500 animate-fade-in-down">
+            <span className="text-xl">✅</span>
+            <span className="font-semibold text-sm">{notification}</span>
+          </div>
+        )}
+        {error && (
+          <div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="font-semibold text-sm">{error}</span>
+            </div>
+            <button onClick={() => setError('')} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+          </div>
+        )}
+      </div>
 
       {/* Header */}
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 mb-6 shadow flex items-center justify-between px-4">
         <h2 className="text-xl font-bold text-white">Manage Canteens</h2>
         <span className="text-white font-semibold text-base">Total: {canteens.length}</span>
       </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>
-      )}
 
       {/* Add Canteen Form */}
       <form onSubmit={handleAddCanteen} className="mb-6 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-100">
@@ -385,6 +471,7 @@ const AdminCanteens: React.FC = () => {
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Segment</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Site / Branch</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Canteen Name</th>
+              <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Meal Slots</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -398,10 +485,15 @@ const AdminCanteens: React.FC = () => {
                   <td className="p-3 text-sm font-medium text-gray-900">{canteen.site}</td>
                   <td className="p-3 text-sm text-gray-600">{canteen.name}</td>
                   <td className="p-3 text-sm">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${canteen.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {canteen.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-sm">
                     {canteen.meal_slots && canteen.meal_slots.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
                         {canteen.meal_slots.map((slot, sIdx) => (
-                          <span key={sIdx} className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded border border-green-200" title={`${slot.startTime} - ${slot.endTime}`}>
+                          <span key={sIdx} className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded border border-green-200" title={slot.startTime && slot.endTime ? `${slot.startTime} - ${slot.endTime}` : 'No time set'}>
                             {slot.category}
                           </span>
                         ))}
@@ -412,6 +504,12 @@ const AdminCanteens: React.FC = () => {
                   </td>
                   <td className="p-3 text-sm">
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => { setRenamingCanteen(canteen); setNewCanteenName(canteen.name); }}
+                        className="text-orange-600 hover:text-orange-800 font-medium text-sm flex items-center gap-1"
+                      >
+                        <span>✏️</span> Edit
+                      </button>
                       <button
                         onClick={() => handleOpenSlots(canteen)}
                         className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1"
@@ -424,6 +522,12 @@ const AdminCanteens: React.FC = () => {
                       >
                         <span>🗑️</span> Delete
                       </button>
+                      <button
+                        onClick={() => handleToggleActive(canteen)}
+                        className={`font-medium text-sm flex items-center gap-1 ${canteen.is_active ? 'text-yellow-600 hover:text-yellow-800' : 'text-green-600 hover:text-green-800'}`}
+                      >
+                        <span>{canteen.is_active ? '⏸️' : '▶️'}</span> {canteen.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -434,6 +538,44 @@ const AdminCanteens: React.FC = () => {
           <p className="text-center py-6 text-gray-500">No canteens found. Add one above.</p>
         )}
       </div>
+
+      {/* Rename Canteen Modal */}
+      {renamingCanteen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md transform transition-all scale-100">
+            <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Rename Canteen</h3>
+                <p className="text-sm text-gray-500">Current: <span className="font-semibold text-primary-600">{renamingCanteen.name}</span></p>
+              </div>
+              <button onClick={() => { setRenamingCanteen(null); setNewCanteenName(''); }} className="text-gray-400 hover:text-gray-700 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">New Canteen Name</label>
+              <input
+                type="text"
+                value={newCanteenName}
+                onChange={(e) => setNewCanteenName(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="Enter new canteen name"
+              />
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => { setRenamingCanteen(null); setNewCanteenName(''); }}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >Cancel</button>
+              <button
+                onClick={handleRenameCanteen}
+                disabled={!newCanteenName.trim() || newCanteenName.trim() === renamingCanteen.name}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Slots Modal */}
       {editingCanteen && (
@@ -467,7 +609,7 @@ const AdminCanteens: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">Start Time</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">Start Time <span className="text-gray-400 normal-case">(Optional)</span></label>
                     <input
                       type="time"
                       className="w-full text-sm p-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
@@ -476,7 +618,7 @@ const AdminCanteens: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">End Time</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">End Time <span className="text-gray-400 normal-case">(Optional)</span></label>
                     <input
                       type="time"
                       className="w-full text-sm p-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
@@ -508,9 +650,11 @@ const AdminCanteens: React.FC = () => {
                           </div>
                           <div>
                             <span className="font-bold text-gray-800 text-lg">{slot.category}</span>
-                            <div className="text-sm text-gray-500 font-medium">
-                              {slot.startTime} <span className="text-gray-300 mx-1">➜</span> {slot.endTime}
-                            </div>
+                            {(slot.startTime || slot.endTime) && (
+                              <div className="text-sm text-gray-500 font-medium">
+                                {slot.startTime || '--:--'} <span className="text-gray-300 mx-1">➜</span> {slot.endTime || '--:--'}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex gap-2">

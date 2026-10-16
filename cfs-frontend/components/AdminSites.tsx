@@ -22,6 +22,13 @@ const AdminSites: React.FC = () => {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [error, setError] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   const [form, setForm] = useState({ location: '', branch_location: '', segment_id: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingSite, setEditingSite] = useState({ location: '', branch_location: '', segment_id: '' });
@@ -260,18 +267,29 @@ const AdminSites: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
-      {notification && (
-        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
-          <span>✅</span><span className="font-semibold">{notification}</span>
-        </div>
-      )}
+      {/* Toast Notification Container in Top-Right Corner */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+        {notification && (
+          <div className="pointer-events-auto bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-green-500 animate-fade-in-down">
+            <span className="text-xl">✅</span>
+            <span className="font-semibold text-sm">{notification}</span>
+          </div>
+        )}
+        {error && (
+          <div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="font-semibold text-sm">{error}</span>
+            </div>
+            <button onClick={() => setError('')} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+          </div>
+        )}
+      </div>
 
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 mb-6 shadow flex items-center justify-between px-4">
         <h2 className="text-xl font-bold text-white">Manage Branches</h2>
         <span className="text-white font-semibold text-base">Total: {sites.length}</span>
       </div>
-
-      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
       <form onSubmit={handleAddSite} className="mb-6 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">ADD NEW BRANCH / SITE</h3>
@@ -291,7 +309,7 @@ const AdminSites: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-            <input name="branch_location" value={form.branch_location} onChange={(e) => setForm({ ...form, branch_location: e.target.value })} placeholder="e.g., Andheri East Area" className="w-full border p-2 rounded" required />
+            <input name="branch_location" value={form.branch_location} onChange={(e) => setForm({ ...form, branch_location: e.target.value })} placeholder="e.g., Andheri East Area (Optional)" className="w-full border p-2 rounded" />
           </div>
           <button type="submit" disabled={loading} className="w-full bg-primary-600 hover:bg-primary-700 text-white p-2 rounded font-semibold flex items-center justify-center gap-2">
             <span>+</span> {loading ? 'Adding...' : 'Add Branch'}

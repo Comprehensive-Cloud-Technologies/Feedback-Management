@@ -2,7 +2,7 @@
 import React, { useState, Component } from 'react';
 import './index.css';
 import './styles/icons.css';
-import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import FeedbackForm from './components/FeedbackForm';
 import QRCodePage from './components/QRCodePage';
 import QRCodePrintPage from './components/QRCodePrintPage';
@@ -87,7 +87,7 @@ const App: React.FC = () => {
 
   // Sidebar link helper
   const SidebarLink = ({ to, label, icon, isCollapsed }: { to: string, label: string, icon?: string, isCollapsed: boolean }) => {
-    const active = window.location.hash.startsWith(to);
+    const active = window.location.pathname === to || (to !== '/admin' && window.location.pathname.startsWith(to));
     return (
       <a href={to}
         title={label}
@@ -108,7 +108,7 @@ const App: React.FC = () => {
     const isBranchAdmin = role === 'branch_admin';
 
     // Branch Admin doesn't want side panel
-    if (isBranchAdmin && window.location.hash !== '#/admin-login') {
+    if (isBranchAdmin && window.location.pathname !== '/admin-login') {
       return (
         <div className="min-h-screen bg-gray-50 text-gray-800">
           {children}
@@ -118,8 +118,8 @@ const App: React.FC = () => {
 
     return (
       <div className="min-h-screen bg-gray-50 text-gray-800 flex">
-        {window.location.hash.startsWith('#/admin') &&
-          window.location.hash !== '#/admin-login' &&
+        {window.location.pathname.startsWith('/admin') &&
+          window.location.pathname !== '/admin-login' &&
           localStorage.getItem('canteenAdminJWT') && (
             <div
               className={`fixed top-0 left-0 bottom-0 bg-[#111] text-white z-50 flex flex-col transition-all duration-300 shadow-xl
@@ -138,31 +138,31 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex-1 py-4 px-2 overflow-y-auto custom-scrollbar">
-                <SidebarLink to="#/admin" label="Dashboard" icon="📊" isCollapsed={isCollapsed} />
+                <SidebarLink to="/admin" label="Dashboard" icon="📊" isCollapsed={isCollapsed} />
 
                 {isAdmin && (
-                  <SidebarLink to="#/admin/segments" label="Manage Segments" icon="📋" isCollapsed={isCollapsed} />
+                  <SidebarLink to="/admin/segments" label="Manage Segments" icon="📋" isCollapsed={isCollapsed} />
                 )}
 
                 {isAdmin && (
-                  <SidebarLink to="#/admin/sites" label="Manage Branches" icon="🏢" isCollapsed={isCollapsed} />
+                  <SidebarLink to="/admin/sites" label="Manage Branches" icon="🏢" isCollapsed={isCollapsed} />
                 )}
 
                 {isAdmin && (
-                  <SidebarLink to="#/admin/branch-admins" label="Manage Branch Admins" icon="👤" isCollapsed={isCollapsed} />
+                  <SidebarLink to="/admin/branch-admins" label="Manage Branch Admins" icon="👤" isCollapsed={isCollapsed} />
                 )}
 
-                <SidebarLink to="#/admin/canteens" label="Manage Canteens" icon="🏪" isCollapsed={isCollapsed} />
+                <SidebarLink to="/admin/canteens" label="Manage Canteens" icon="🏪" isCollapsed={isCollapsed} />
                 {isAdmin && (
-                  <SidebarLink to="#/admin/question-manager" label="Manage Questions" icon="🎨" isCollapsed={isCollapsed} />
+                  <SidebarLink to="/admin/question-manager" label="Manage Questions" icon="🎨" isCollapsed={isCollapsed} />
                 )}
-                <SidebarLink to="#/admin/feedback" label="Manage Feedback" icon="💬" isCollapsed={isCollapsed} />
-                <SidebarLink to="#/admin/qr-codes" label="QR Codes" icon="📱" isCollapsed={isCollapsed} />
+                <SidebarLink to="/admin/feedback" label="Manage Feedback" icon="💬" isCollapsed={isCollapsed} />
+                <SidebarLink to="/admin/qr-codes" label="QR Codes" icon="📱" isCollapsed={isCollapsed} />
               </div>
 
               <div className="p-4 border-t border-gray-800">
                 <button
-                  onClick={() => { localStorage.clear(); window.location.href = '/#/admin-login'; }}
+                  onClick={() => { localStorage.clear(); window.location.href = '/admin-login'; }}
                   title="Logout"
                   className={`w-full flex items-center justify-center gap-2 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white p-2 rounded-lg transition-all font-semibold
                      ${isCollapsed ? 'px-0' : ''}
@@ -175,12 +175,12 @@ const App: React.FC = () => {
             </div>
           )}
 
-        <div className={`flex-1 transition-all duration-300 min-h-screen flex flex-col ${window.location.hash.startsWith('#/admin') && window.location.hash !== '#/admin-login' ? (isCollapsed ? 'ml-20' : 'ml-64') : 'ml-0'}`}>
+        <div className={`flex-1 transition-all duration-300 min-h-screen flex flex-col ${window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin-login' ? (isCollapsed ? 'ml-20' : 'ml-64') : 'ml-0'}`}>
           <div className="w-full flex-grow">
             {children}
           </div>
           {/* Footer inside content area to align correctly */}
-          {window.location.hash.startsWith('#/admin') && (
+          {window.location.pathname.startsWith('/admin') && (
             <footer className="w-full py-4 text-center text-gray-500 text-sm border-t border-gray-200 mt-auto bg-white/90 backdrop-blur-sm">
               &copy; Catalyst Service Solutions Partners Pvt. Ltd. 2025 All rights reserved .
             </footer>
@@ -210,6 +210,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<AdminLayout><AdminLogin onLogin={login} /></AdminLayout>} />
         <Route path="/feedback" element={<AdminLayout><FeedbackForm jwt={null} /></AdminLayout>} />
+        <Route path="/f/:siteSlug/:canteenSlug" element={<AdminLayout><FeedbackForm jwt={null} /></AdminLayout>} />
         <Route path="/admin-login" element={<AdminLayout><AdminLogin onLogin={login} /></AdminLayout>} />
 
         {/* Admin Routes */}
@@ -230,9 +231,9 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <div style={{ minHeight: '100vh', background: 'var(--secondary-color)' }}>
-        <HashRouter>
+        <BrowserRouter>
           <AppContent />
-        </HashRouter>
+        </BrowserRouter>
       </div>
     </ErrorBoundary>
   );

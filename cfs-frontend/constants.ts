@@ -39,11 +39,13 @@ export const getEndpoints = () => {
     BRANCH_ADMINS_INFO: `${apiUrl}/branch-admins`,
     ADMIN_FEEDBACK: `${apiUrl}/feedback`,
     QUESTIONS: `${apiUrl}/questions`,
-    FEEDBACK: `${frontendUrl}/#/feedback`,
+    FEEDBACK: `${frontendUrl}/feedback`,
     SUBMIT_FEEDBACK: `${apiUrl}/feedback`,
     CANTEENS: `${apiUrl}/canteens`,
     ADMIN_CANTEENS: `${apiUrl}/canteens`,
     SEGMENTS: `${apiUrl}/segments`,
+    FORM_SETTINGS: `${apiUrl}/form-settings`,
+    RESOLVE_LINK: `${apiUrl}/resolve-link`,
   };
 };
 
@@ -62,7 +64,7 @@ export const ENDPOINTS = {
   ADMIN_BRANCH_ADMINS: `${API_URL}/branch-admins`,
   ADMIN_FEEDBACK: `${API_URL}/feedback`,
   QUESTIONS: `${API_URL}/questions`,
-  FEEDBACK: `${FRONTEND_URL}/#/feedback`,
+  FEEDBACK: `${FRONTEND_URL}/feedback`,
   SUBMIT_FEEDBACK: `${API_URL}/feedback`,
   CANTEENS: `${API_URL}/canteens`,
   ADMIN_CANTEENS: `${API_URL}/canteens`,

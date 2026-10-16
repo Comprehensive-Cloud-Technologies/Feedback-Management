@@ -746,6 +746,13 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
   const endpoints = getEndpoints();
   const [error, setError] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   const [form, setForm] = useState({ site: initialSite || '', question_text: '', response_type: 'smiley_faces' });
   const [customization, setCustomization] = useState<Customization | null>(() => {
     // Default to 'smiley_faces' with clean colorful emojis
@@ -1327,6 +1334,7 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
     try {
       const token = localStorage.getItem('canteenAdminJWT');
       const payload: any = {
+        id,
         question_text: editingQuestion.question_text,
         response_type: editingQuestion.response_type
       };
@@ -1335,7 +1343,7 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         payload.customization = editingCustomization;
       }
 
-      const res = await fetch(`${endpoints.QUESTIONS}/${id}`, {
+      const res = await fetch(`${endpoints.QUESTIONS}?id=${id}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1345,9 +1353,9 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         setEditingId(null);
         setEditingQuestion(null);
         await fetchQuestions();
-        showNotification('Updated. 🎉');
+        showNotification('Question updated successfully! 🎉');
       } else {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
         setError(errorData.error || 'Failed to update question');
       }
     } catch (e: any) {
@@ -1425,16 +1433,24 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         </div>
       )}
 
-      {notification && (
-        <div className="fixed bottom-8 right-8 z-[200] animate-slide-up">
-          <div className="bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/10">
+      {/* Toast Notification Container in Top-Right Corner */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+        {notification && (
+          <div className="pointer-events-auto bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-green-500 animate-fade-in-down">
             <span className="text-xl">✅</span>
-            <span className="font-bold">{notification}</span>
+            <span className="font-semibold text-sm">{notification}</span>
           </div>
-        </div>
-      )}
-
-      {error && <div className="fixed top-4 right-4 z-50 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg">❌ {error}</div>}
+        )}
+        {error && (
+          <div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="font-semibold text-sm">{error}</span>
+            </div>
+            <button onClick={() => setError('')} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+          </div>
+        )}
+      </div>
 
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 mb-6 shadow px-4">
         <h2 className="text-xl font-bold text-white">📋 Manage Questions with Customization {userRole === 'branch_admin' && `(${branchAdminSite})`}</h2>

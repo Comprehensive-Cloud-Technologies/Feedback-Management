@@ -12,19 +12,26 @@ if (Response::getMethod() !== 'POST') {
 
 $data = Response::getBody();
 
-// Validate required fields
-Response::validateRequired($data, ['site', 'username', 'password']);
+// Validate required fields - site is now optional
+Response::validateRequired($data, ['username', 'password']);
 
-$site = $data['site'];
+$site = isset($data['site']) ? $data['site'] : null;
 $username = $data['username'];
 $password = $data['password'];
 
 try {
-    // Get branch admin from database
-    $admin = Database::fetchOne(
-        'SELECT id, site, password FROM branch_admins WHERE site = ? AND username = ?',
-        [$site, $username]
-    );
+    // Look up by username (and optionally site)
+    if ($site) {
+        $admin = Database::fetchOne(
+            'SELECT id, site, password FROM branch_admins WHERE site = ? AND username = ?',
+            [$site, $username]
+        );
+    } else {
+        $admin = Database::fetchOne(
+            'SELECT id, site, password FROM branch_admins WHERE username = ?',
+            [$username]
+        );
+    }
 
     if (!$admin) {
         Response::error(ERROR_MESSAGES['INVALID_CREDENTIALS'], 401);

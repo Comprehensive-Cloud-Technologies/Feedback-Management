@@ -56,8 +56,22 @@ if (array_key_exists($routeKey, $routes)) {
     return;
 }
 
+$trimmedRouteKey = trim($routeKey, '/');
+$baseRoute = '/' . explode('/', $trimmedRouteKey)[0];
+if ($baseRoute !== '/' && array_key_exists($baseRoute, $routes)) {
+    require __DIR__ . '/' . $routes[$baseRoute];
+    return;
+}
+
 if (array_key_exists($uri, $routes)) {
     require __DIR__ . '/' . $routes[$uri];
+    return;
+}
+
+$trimmedUri = trim($uri, '/');
+$baseUri = '/' . explode('/', $trimmedUri)[0];
+if ($baseUri !== '/' && array_key_exists($baseUri, $routes)) {
+    require __DIR__ . '/' . $routes[$baseUri];
     return;
 }
 

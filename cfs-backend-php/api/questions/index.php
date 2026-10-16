@@ -291,11 +291,12 @@ function handlePut()
 
     $data = Response::getBody();
 
-    // Check for ID in path or body
+    // Check for ID in path, query, or body
     $path = Response::getPath();
     $pathParts = explode('/', trim($path, '/'));
     $idFromPath = (count($pathParts) > 0 && is_numeric($pathParts[count($pathParts) - 1])) ? (int) $pathParts[count($pathParts) - 1] : null;
-    $id = $idFromPath ?? ($data['id'] ?? null);
+    $query = Response::getQuery();
+    $id = $idFromPath ?? ($data['id'] ?? (isset($query['id']) && is_numeric($query['id']) ? (int)$query['id'] : null));
 
     if (!$id) {
         Response::error('Missing question ID', 400);

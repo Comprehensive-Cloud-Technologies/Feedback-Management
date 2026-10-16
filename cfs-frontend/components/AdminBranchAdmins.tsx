@@ -20,6 +20,13 @@ const AdminBranchAdmins: React.FC = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [notification, setNotification] = useState<string | null>(null);
 
+	useEffect(() => {
+		if (error) {
+			const timer = setTimeout(() => setError(null), 5000);
+			return () => clearTimeout(timer);
+		}
+	}, [error]);
+
 	const token = localStorage.getItem('canteenAdminJWT') || '';
 	const endpoints = getEndpoints();
 
@@ -148,10 +155,10 @@ const AdminBranchAdmins: React.FC = () => {
 						showNotification('Logo updated successfully! 🎨');
 					} else {
 						const d = await res.json();
-						alert(d.error || 'Failed to update logo');
+						setError(d.error || 'Failed to update logo');
 					}
-				} catch (e) {
-					alert('An error occurred');
+				} catch (e: any) {
+					setError(e.message || 'An error occurred while uploading logo');
 				}
 				setLoading(false);
 			};
@@ -162,11 +169,24 @@ const AdminBranchAdmins: React.FC = () => {
 
 	return (
 		<div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
-			{notification && (
-				<div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
-					<span>✅</span><span className="font-semibold">{notification}</span>
-				</div>
-			)}
+			{/* Toast Notification Container in Top-Right Corner */}
+			<div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+				{notification && (
+					<div className="pointer-events-auto bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-green-500 animate-fade-in-down">
+						<span className="text-xl">✅</span>
+						<span className="font-semibold text-sm">{notification}</span>
+					</div>
+				)}
+				{error && (
+					<div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+						<div className="flex items-center gap-2">
+							<span className="text-xl">❌</span>
+							<span className="font-semibold text-sm">{error}</span>
+						</div>
+						<button onClick={() => setError(null)} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+					</div>
+				)}
+			</div>
 
 			<div className="bg-gradient-to-r from-indigo-600 to-indigo-400 rounded-lg py-3 mb-6 shadow flex items-center justify-between px-4">
 				<h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -174,8 +194,6 @@ const AdminBranchAdmins: React.FC = () => {
 				</h2>
 				<span className="text-white font-semibold text-base">Total Admins: {admins.length}</span>
 			</div>
-
-			{error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 				{/* Create Account Column */}

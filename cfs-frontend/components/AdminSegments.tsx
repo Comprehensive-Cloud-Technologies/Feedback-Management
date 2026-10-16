@@ -233,19 +233,24 @@ const AdminSegments: React.FC = () => {
         <p>Configure organizational hierarchy starting with segments.</p>
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="alert alert-error" role="alert">
-          {error}
-        </div>
-      )}
-
-      {/* Notification */}
-      {notification && (
-        <div className={`alert alert-${notification.type}`} role="alert">
-          {notification.message}
-        </div>
-      )}
+      {/* Toast Notification Container in Top-Right Corner */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
+        {notification && (
+          <div className={`pointer-events-auto text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-fade-in-down ${notification.type === 'error' ? 'bg-red-600 border border-red-500' : 'bg-green-600 border border-green-500'}`}>
+            <span className="text-xl">{notification.type === 'error' ? '❌' : '✅'}</span>
+            <span className="font-semibold text-sm">{notification.message}</span>
+          </div>
+        )}
+        {error && (
+          <div className="pointer-events-auto bg-red-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center justify-between gap-3 border border-red-500 animate-fade-in-down">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="font-semibold text-sm">{error}</span>
+            </div>
+            <button onClick={() => setError(null)} className="text-white hover:text-gray-200 text-lg font-bold ml-2">×</button>
+          </div>
+        )}
+      </div>
 
       {/* Add/Edit Segment Form */}
       <div className="form-section">

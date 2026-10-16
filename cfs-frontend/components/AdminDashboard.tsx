@@ -317,67 +317,128 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     });
   }, [feedbackData, selectedSegment, selectedSite, selectedCanteenName, selectedMealSlot, timeRange, customStartDate, customEndDate, segments]);
 
-  // Analytics Calculation
+  // Analytics Calculation — dynamic rating levels
   const analytics = useMemo(() => {
+    // Determine max rating from feedback data
+    let maxRating = 0;
+    filteredData.forEach(fb => {
+      fb.responses?.forEach(r => {
+        const val = Number(r.rating);
+        if (val > maxRating) maxRating = val;
+      });
+    });
+    if (maxRating === 0) maxRating = 4; // fallback
+
+    // Build dynamic label/color maps based on rating count
+    const defaultLabelsMap: Record<number, string[]> = {
+      2: ['Poor', 'Good'],
+      3: ['Needs Improvement', 'Average', 'Good'],
+      4: ['Poor', 'Needs Improvement', 'Average', 'Good'],
+      5: ['Poor', 'Needs Improvement', 'Average', 'Good', 'Excellent']
+    };
+    const defaultPieColorsMap: Record<number, string[]> = {
+      2: ['#ef4444', '#22c55e'],
+      3: ['#f97316', '#eab308', '#22c55e'],
+      4: ['#ef4444', '#f97316', '#eab308', '#22c55e'],
+      5: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#059669']
+    };
+
+    let dynamicLabels: string[] = defaultLabelsMap[maxRating] || defaultLabelsMap[4];
+
+    // Try to get labels from question customization
+    for (const q of questions) {
+      const cust = (q as any).customization;
+      if (cust?.options && Array.isArray(cust.options) && cust.options.length === maxRating) {
+        const sorted = [...cust.options].sort((a: any, b: any) => a.value - b.value);
+        dynamicLabels = sorted.map((o: any) => o.label);
+        break;
+      }
+    }
+
+    // Override from feedback rating_label
+    const labelsByLevel: Record<number, string> = {};
+    filteredData.forEach(fb => {
+      fb.responses?.forEach((r: any) => {
+        if (r.rating_label && r.rating) labelsByLevel[Number(r.rating)] = r.rating_label;
+      });
+    });
+    if (Object.keys(labelsByLevel).length >= maxRating) {
+      const levels = Object.keys(labelsByLevel).map(Number).sort((a, b) => a - b);
+      dynamicLabels = levels.map(l => labelsByLevel[l]);
+    }
+
+    const pieColors = defaultPieColorsMap[maxRating] || defaultPieColorsMap[4];
+
+    const dynamicRatings = Array.from({ length: maxRating }, (_, i) => ({
+      level: i + 1,
+      label: dynamicLabels[i] || `Rating ${i + 1}`,
+      pieColor: pieColors[i] || '#6b7280'
+    }));
+
     if (!filteredData.length) return {
       totalSubmissions: 0,
       positivePercentage: 0,
+      positiveLabel: dynamicLabels[maxRating - 1] || 'Good',
       averageRating: '0.00',
-      detailedStats: { 1: { count: 0, percentage: '0' }, 2: { count: 0, percentage: '0' }, 3: { count: 0, percentage: '0' }, 4: { count: 0, percentage: '0' } },
-      ratingDistribution: RATINGS.map(r => ({ name: r.label, value: 0 })),
-      ratingPercentages: RATINGS.map(r => ({ name: r.label, value: 0 }))
+      ratingDistribution: dynamicRatings.map(r => ({ name: r.label, value: 0 })),
+      ratingPercentages: dynamicRatings.map(r => ({ name: r.label, value: 0 })),
+      dynamicRatings,
+      pieColors,
+      maxRating
     };
 
-    const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const ratingCounts: Record<number, number> = {};
+    dynamicRatings.forEach(r => ratingCounts[r.level] = 0);
     let totalRatings = 0;
+    let weightedSum = 0;
 
     filteredData.forEach(fb => {
-      if (fb?.responses?.length) {
-        fb.responses.forEach(response => {
-          if (response) {
-            const val = Number(response.rating);
-            if (!isNaN(val) && val >= 1 && val <= 4) {
-              ratingCounts[val] = (ratingCounts[val] || 0) + 1;
-              totalRatings++;
-            }
-          }
-        });
-      }
+      fb.responses?.forEach(response => {
+        const val = Number(response.rating);
+        if (!isNaN(val) && val >= 1 && val <= maxRating) {
+          ratingCounts[val] = (ratingCounts[val] || 0) + 1;
+          totalRatings++;
+          weightedSum += val;
+        }
+      });
     });
 
-    const goodRatingCount = (ratingCounts[4] || 0);
-
-    // Calculate Detailed Stats and Average
-    let weightedSum = 0;
-    const detailedStats: Record<number, { count: number; percentage: string }> = {};
-    [1, 2, 3, 4].forEach(level => {
-      const count = ratingCounts[level] || 0;
-      weightedSum += count * level;
-      detailedStats[level] = {
-        count,
-        percentage: totalRatings > 0 ? ((count / totalRatings) * 100).toFixed(2) : '0.00'
-      };
-    });
+    const highestLevel = maxRating;
+    const positiveCount = ratingCounts[highestLevel] || 0;
+    const positiveLabel = dynamicLabels[maxRating - 1] || 'Good';
 
     const averageRating = totalRatings > 0 ? (weightedSum / totalRatings).toFixed(2) : '0.00';
 
+    // Find most common rating
+    let modalRatingName = dynamicRatings[0]?.label || 'N/A';
+    let modalMax = 0;
+    dynamicRatings.forEach(r => {
+      if ((ratingCounts[r.level] || 0) > modalMax) {
+        modalMax = ratingCounts[r.level] || 0;
+        modalRatingName = r.label;
+      }
+    });
+
     return {
       totalSubmissions: filteredData.length,
-      positivePercentage: Number(totalRatings > 0
-        ? ((goodRatingCount) / totalRatings * 100).toFixed(1)
-        : 0),
+      positivePercentage: Number(totalRatings > 0 ? ((positiveCount / totalRatings) * 100).toFixed(1) : 0),
+      positiveLabel,
       averageRating,
-      detailedStats,
-      ratingDistribution: RATINGS.map(r => ({
-        name: `${r.label} (${totalRatings > 0 ? ((ratingCounts[r.level] || 0) / totalRatings * 100).toFixed(1) : '0.0'}%)`,
+      ratingDistribution: dynamicRatings.map(r => ({
+        name: `${r.label} (${totalRatings > 0 ? (((ratingCounts[r.level] || 0) / totalRatings) * 100).toFixed(1) : '0.0'}%)`,
         value: ratingCounts[r.level] || 0
       })),
-      ratingPercentages: RATINGS.map(r => ({
+      ratingPercentages: dynamicRatings.map(r => ({
         name: r.label,
         value: totalRatings > 0 ? ((ratingCounts[r.level] || 0) / totalRatings * 100).toFixed(1) : 0
-      }))
+      })),
+      modalRatingName,
+      modalRatingPct: totalRatings > 0 ? ((modalMax / totalRatings) * 100).toFixed(1) : '0',
+      dynamicRatings,
+      pieColors,
+      maxRating
     };
-  }, [filteredData]);
+  }, [filteredData, questions]);
 
   const exportToCSV = () => {
     if (!filteredData.length) return;
@@ -461,17 +522,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const allCanteensBarData = useMemo(() => {
     if (selectedSite !== 'All Sites') return [];
 
+    const maxRating = analytics.maxRating || 4;
+    const dynRatings = analytics.dynamicRatings || [];
     const canteenStats: Record<string, { ratings: Record<number, number>; total: number }> = {};
     const normalize = (s: any) => String(s || '').trim();
 
     filteredData.forEach(fb => {
       const cName = normalize(canonicalCanteen(fb));
       if (!cName) return;
-      if (!canteenStats[cName]) canteenStats[cName] = { ratings: { 1: 0, 2: 0, 3: 0, 4: 0 }, total: 0 };
+      if (!canteenStats[cName]) {
+        const initRatings: Record<number, number> = {};
+        for (let i = 1; i <= maxRating; i++) initRatings[i] = 0;
+        canteenStats[cName] = { ratings: initRatings, total: 0 };
+      }
 
       fb.responses?.forEach(r => {
         const val = Number(r.rating);
-        if (!isNaN(val) && val >= 1 && val <= 4) {
+        if (!isNaN(val) && val >= 1 && val <= maxRating) {
           canteenStats[cName].ratings[val] = (canteenStats[cName].ratings[val] || 0) + 1;
           canteenStats[cName].total++;
         }
@@ -479,20 +546,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     });
 
     return Object.entries(canteenStats).map(([name, stats]) => {
-      const total = Math.max(stats.total, 1); // Avoid division by zero
-      // Explicitly check for 0 total to avoid NaN
+      const total = Math.max(stats.total, 1);
+      const row: Record<string, string | number> = { name };
       if (stats.total === 0) {
-        return { name, Good: 0, Average: 0, 'Needs Improvement': 0, Poor: 0 };
+        dynRatings.forEach(r => { row[r.label] = 0; });
+      } else {
+        dynRatings.forEach(r => {
+          row[r.label] = parseFloat(((stats.ratings[r.level] / total) * 100).toFixed(1));
+        });
       }
-      return {
-        name,
-        Good: parseFloat(((stats.ratings[4] / total) * 100).toFixed(1)),
-        Average: parseFloat(((stats.ratings[3] / total) * 100).toFixed(1)),
-        'Needs Improvement': parseFloat(((stats.ratings[2] / total) * 100).toFixed(1)),
-        Poor: parseFloat(((stats.ratings[1] / total) * 100).toFixed(1))
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [feedbackData, selectedSite]);
+      return row;
+    }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [filteredData, selectedSite, analytics]);
 
 
   // ------------------------------------------------------------------
@@ -501,26 +566,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const singleSitePieData = useMemo(() => {
     if (selectedSite === 'All Sites') return [];
 
+    const maxRating = analytics.maxRating || 4;
+    const dynRatings = analytics.dynamicRatings || [];
     const normalize = (s: any) => String(s || '').trim().toLowerCase();
-    const targetSite = normalize(selectedSite);
 
-    // Get unique canteens from siteCanteens (which comes from API)
-    // If none, extract from feedback data
     let canteensToShow = siteCanteens && siteCanteens.length > 0 ? siteCanteens : [];
 
     if (canteensToShow.length === 0) {
-      // Extract unique canteens from feedback for this site
       const uniqueCanteens = new Set<string>();
       filteredData.forEach(fb => {
         const cName = canonicalCanteen(fb);
-        if (cName && cName.trim()) {
-          uniqueCanteens.add(cName);
-        }
+        if (cName && cName.trim()) uniqueCanteens.add(cName);
       });
       canteensToShow = Array.from(uniqueCanteens);
     }
 
-    // [ADD] Filter to specific canteen if selected
     if (selectedCanteenName !== 'All Canteens') {
       canteensToShow = canteensToShow.filter(c => normalize(c) === normalize(selectedCanteenName));
     }
@@ -528,18 +588,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return canteensToShow.map(cName => {
       const normalizedCName = normalize(cName);
 
-      // Filter feedback for this site AND this canteen
       const canteenFeedbacks = filteredData.filter(fb =>
         normalize(canonicalCanteen(fb)) === normalizedCName
       );
 
-      const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+      const ratingCounts: Record<number, number> = {};
+      for (let i = 1; i <= maxRating; i++) ratingCounts[i] = 0;
       let total = 0, count = 0;
 
       canteenFeedbacks.forEach(fb => {
         fb.responses?.forEach(r => {
           const val = Number(r.rating);
-          if (!isNaN(val) && val >= 1 && val <= 4) {
+          if (!isNaN(val) && val >= 1 && val <= maxRating) {
             ratingCounts[val] = (ratingCounts[val] || 0) + 1;
             total += val;
             count++;
@@ -547,43 +607,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         });
       });
 
-      const pieData = RATINGS.map(r => ({
+      const pieData = dynRatings.map(r => ({
         name: r.label,
         value: ratingCounts[r.level] || 0
       }));
 
-      const totalFeedbacks = canteenFeedbacks.length;
-
       return {
-        canteenName: cName, // Keep original name for display
+        canteenName: cName,
         pieData,
         avgRating: count > 0 ? (total / count).toFixed(2) : 'N/A',
-        totalResponses: totalFeedbacks
+        totalResponses: canteenFeedbacks.length
       };
     });
-  }, [filteredData, selectedSite, siteCanteens]);
+  }, [filteredData, selectedSite, siteCanteens, analytics]);
 
   // ------------------------------------------------------------------
   // Logic for "Question-wise Statistics" (Single Site)
   // ------------------------------------------------------------------
   const questionAnalysis = useMemo(() => {
-    if (selectedSite === 'All Sites') return { tableData: [], chartData: [], averageChartData: [] };
-
-    const normalize = (s: any) => String(s || '').trim().toLowerCase();
-    const targetSite = normalize(selectedSite);
+    if (selectedSite === 'All Sites') return { tableData: [], chartData: [], averageChartData: [], dynamicRatings: [] };
 
     // Filter feedback for the selected site
     let siteFeedback = filteredData;
 
-    // [NEW] Filter by Meal Slot - ALREADY HANDLED IN filteredData
-    // if (selectedMealSlot !== 'All Slots') {
-    //   siteFeedback = siteFeedback.filter(fb => (fb.meal_category || 'Other') === selectedMealSlot);
-    // }
-
     // Build question lookup map from questions array
     const questionMap: Record<number | string, { id: number; text: string; emoji?: string; site?: string }> = {};
     questions.forEach(q => {
-      const qId = String(q.id || q.question_id || '');
+      const qId = String(q.id || (q as any).question_id || '');
       if (qId) {
         questionMap[qId] = {
           id: q.id || 0,
@@ -594,6 +644,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }
     });
 
+    // Determine dynamic max rating from feedback data
+    let maxRating = 0;
+    siteFeedback.forEach(fb => {
+      fb.responses?.forEach(r => {
+        const val = Number(r.rating);
+        if (val > maxRating) maxRating = val;
+      });
+    });
+    if (maxRating === 0) maxRating = 4; // fallback
+
+    // Build dynamic labels
+    const defaultLabelsMap: Record<number, string[]> = {
+      2: ['Poor', 'Good'],
+      3: ['Needs Improvement', 'Average', 'Good'],
+      4: ['Poor', 'Needs Improvement', 'Average', 'Good'],
+      5: ['Poor', 'Needs Improvement', 'Average', 'Good', 'Excellent']
+    };
+    const defaultColorsMap: Record<number, string[]> = {
+      2: ['text-red-500', 'text-green-500'],
+      3: ['text-orange-500', 'text-yellow-500', 'text-green-500'],
+      4: ['text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500'],
+      5: ['text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500', 'text-emerald-700']
+    };
+
+    let dynamicLabels: string[] = defaultLabelsMap[maxRating] || defaultLabelsMap[4];
+    let dynamicColors: string[] = defaultColorsMap[maxRating] || defaultColorsMap[4];
+
+    // Try to get labels from question customization
+    for (const q of questions) {
+      const cust = (q as any).customization;
+      if (cust && cust.options && Array.isArray(cust.options) && cust.options.length === maxRating) {
+        const sorted = [...cust.options].sort((a: any, b: any) => a.value - b.value);
+        dynamicLabels = sorted.map((o: any) => o.label);
+        break;
+      }
+    }
+
+    // Override from feedback rating_label
+    const labelsByLevel: Record<number, string> = {};
+    siteFeedback.forEach(fb => {
+      fb.responses?.forEach((r: any) => {
+        if (r.rating_label && r.rating) {
+          labelsByLevel[Number(r.rating)] = r.rating_label;
+        }
+      });
+    });
+    if (Object.keys(labelsByLevel).length > 0) {
+      const levels = Object.keys(labelsByLevel).map(Number).sort((a, b) => a - b);
+      if (levels.length >= maxRating) {
+        dynamicLabels = levels.map(l => labelsByLevel[l]);
+      }
+    }
+
+    const dynamicRatings = Array.from({ length: maxRating }, (_, i) => ({
+      level: i + 1,
+      label: dynamicLabels[i] || `Rating ${i + 1}`,
+      color: dynamicColors[i] || 'text-gray-500'
+    }));
+
     // Group feedback by question text
     const stats: Record<string, { ratings: Record<number, number>; total: number; qText: string; emoji?: string }> = {};
 
@@ -602,66 +711,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         let qText = r.question_text || '';
         let emoji = '';
 
-        // Try to get question text from response
         if (!qText && r.questionId) {
           const qData = questionMap[r.questionId] || questionMap[String(r.questionId)];
-          if (qData) {
-            qText = qData.text;
-            emoji = qData.emoji || '';
-          }
+          if (qData) { qText = qData.text; emoji = qData.emoji || ''; }
         }
-
-        // Fallback for older format
         if (!qText && r.question_id) {
           const qData = questionMap[r.question_id] || questionMap[String(r.question_id)];
-          if (qData) {
-            qText = qData.text;
-            emoji = qData.emoji || '';
-          }
+          if (qData) { qText = qData.text; emoji = qData.emoji || ''; }
         }
-
-        // Final fallback
-        if (!qText) {
-          qText = `Question ${r.questionId || r.question_id || 'undefined'}`;
-        }
+        if (!qText) { qText = `Question ${r.questionId || r.question_id || 'undefined'}`; }
 
         if (!stats[qText]) {
-          stats[qText] = { ratings: { 1: 0, 2: 0, 3: 0, 4: 0 }, total: 0, qText, emoji };
+          const initRatings: Record<number, number> = {};
+          dynamicRatings.forEach(dr => initRatings[dr.level] = 0);
+          stats[qText] = { ratings: initRatings, total: 0, qText, emoji };
         }
 
         const val = Number(r.rating);
-        if (!isNaN(val) && val >= 1 && val <= 4) {
+        if (!isNaN(val) && val >= 1 && val <= maxRating) {
           stats[qText].ratings[val] = (stats[qText].ratings[val] || 0) + 1;
           stats[qText].total++;
         }
       });
     });
 
-    // If no feedback but we have questions, create empty rows for all questions
+    // If no feedback but we have questions, create empty rows
     if (siteFeedback.length === 0 && questions.length > 0) {
       questions.forEach(q => {
         const qText = q.question_text || q.text || `Question ${q.id}`;
         if (!stats[qText]) {
-          stats[qText] = {
-            ratings: { 1: 0, 2: 0, 3: 0, 4: 0 },
-            total: 0,
-            qText,
-            emoji: q.emoji || ''
-          };
+          const initRatings: Record<number, number> = {};
+          dynamicRatings.forEach(dr => initRatings[dr.level] = 0);
+          stats[qText] = { ratings: initRatings, total: 0, qText, emoji: q.emoji || '' };
         }
       });
     }
 
     const getKeyword = (text: string) => {
       const t = text.toLowerCase();
-      // Priority list of main words
       const keywords = ['Taste', 'Quality', 'Cleanliness', 'Hygiene', 'Staff', 'Service', 'Polite', 'Menu', 'Variety', 'Freshness', 'Hot', 'Price', 'Value', 'Recommend', 'Ambiance', 'Speed', 'Portion'];
-
-      for (const kw of keywords) {
-        if (t.includes(kw.toLowerCase())) return kw;
-      }
-
-      // Fallback: First significant word > 3 chars
+      for (const kw of keywords) { if (t.includes(kw.toLowerCase())) return kw; }
       const words = text.split(' ').map(w => w.replace(/[^\w]/g, ''));
       const significant = words.find(w => w.length > 3);
       return significant ? significant.charAt(0).toUpperCase() + significant.slice(1) : text.substring(0, 10);
@@ -669,73 +758,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     const aggregated = Object.values(stats).map(s => {
       const total = Math.max(s.total, 1);
+      const levelStats = dynamicRatings.map(r => ({
+        label: r.label,
+        level: r.level,
+        count: s.ratings[r.level] || 0,
+        pct: s.total > 0 ? (((s.ratings[r.level] || 0) / total) * 100).toFixed(1) : '0.0',
+        color: r.color
+      }));
 
-      const excellent = s.ratings[4] || 0;
-      const good = s.ratings[3] || 0;
-      const fair = s.ratings[2] || 0;
-      const poor = s.ratings[1] || 0;
-
-      const weightedSum = (excellent * 4) + (good * 3) + (fair * 2) + (poor * 1);
+      const weightedSum = dynamicRatings.reduce((sum, r) => sum + ((s.ratings[r.level] || 0) * r.level), 0);
       const avg = s.total > 0 ? (weightedSum / s.total).toFixed(2) : '0.00';
 
       return {
         question: s.qText,
         emoji: s.emoji || '',
         keyword: getKeyword(s.qText),
-        goodCount: excellent,
-        goodPct: s.total > 0 ? ((excellent / total) * 100).toFixed(1) : '0.0',
-        avgCount: good,
-        avgPct: s.total > 0 ? ((good / total) * 100).toFixed(1) : '0.0',
-        needsImpCount: fair,
-        needsImpPct: s.total > 0 ? ((fair / total) * 100).toFixed(1) : '0.0',
-        poorCount: poor,
-        poorPct: s.total > 0 ? ((poor / total) * 100).toFixed(1) : '0.0',
+        levelStats,
         average: avg,
         totalResponses: s.total
       };
     }).sort((a, b) => a.question.localeCompare(b.question));
 
     // Distribution Chart Data
-    const distributionChartData = aggregated.map(item => ({
-      name: item.question.length > 40 ? item.question.substring(0, 40) + '...' : item.question,
-      Poor: parseFloat(item.poorPct),
-      'Needs Improvement': parseFloat(item.needsImpPct),
-      Average: parseFloat(item.avgPct),
-      Good: parseFloat(item.goodPct)
-    })).filter(d => d.Good > 0 || d.Average > 0 || d['Needs Improvement'] > 0 || d.Poor > 0);
+    const distributionChartData = aggregated.map(item => {
+      const entry: any = { name: item.question.length > 40 ? item.question.substring(0, 40) + '...' : item.question };
+      item.levelStats.forEach(ls => { entry[ls.label] = parseFloat(ls.pct); });
+      return entry;
+    }).filter(d => Object.values(d).some(v => typeof v === 'number' && v > 0));
 
-    // Aggregate Chart Data by Display Name to remove duplicates
-    const aggregatedChartData: Record<string, any> = {};
-    const aggregatedAvgData: Record<string, { totalValue: number; count: number; name: string; color?: string }> = {};
-
+    // Aggregate Chart Data by Display Name
+    const aggregatedAvgData: Record<string, { totalValue: number; count: number; name: string }> = {};
     aggregated.forEach(item => {
-      const keyword = item.keyword; // This is the normalized category name e.g "Cleanliness"
-
-      // For average chart data
+      const keyword = item.keyword;
       if (!aggregatedAvgData[keyword]) {
         aggregatedAvgData[keyword] = { totalValue: parseFloat(item.average), count: 1, name: keyword };
       } else {
         aggregatedAvgData[keyword].totalValue += parseFloat(item.average);
         aggregatedAvgData[keyword].count++;
       }
-
-      // For distribution chart data (if needed to aggregate, but typically questions are distinct)
-      // The instruction specifically mentioned `averageChartData` for aggregation.
-      // If `distributionChartData` also needs aggregation by `name` (which is `item.question`),
-      // a similar logic would be applied here. For now, keeping it as is, as questions are usually unique.
     });
 
     const finalAvgChartData = Object.values(aggregatedAvgData).map(agg => ({
-      name: agg.name.length > 30 ? agg.name.substring(0, 30) + '...' : agg.name, // Truncate for display
+      name: agg.name.length > 30 ? agg.name.substring(0, 30) + '...' : agg.name,
       fullName: agg.name,
       value: (agg.totalValue / agg.count),
     }));
 
-
     return {
       tableData: aggregated,
-      chartData: distributionChartData, // Keeping distributionChartData as is, as aggregation was specified for averageChartData
-      averageChartData: finalAvgChartData
+      chartData: distributionChartData,
+      averageChartData: finalAvgChartData,
+      dynamicRatings
     };
   }, [filteredData, questions]);
 
@@ -926,18 +999,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               iconColor="#ffffff"
             />
             <StatCard
-              title="Positive Feedback (Good)"
+              title={`Positive Feedback (${analytics.positiveLabel || 'Good'})`}
               value={`${analytics.positivePercentage.toFixed(1)}%`}
-              description="Ratings of 'Good'"
+              description={`Ratings of '${analytics.positiveLabel || 'Good'}'`}
               backgroundColor="linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
               textColor="#ffffff"
               iconColor="#ffffff"
             />
             <StatCard
               title="Most Common Rating"
-              value={analytics.ratingDistribution
-                .reduce((prev, current) => (prev.value > current.value) ? prev : current).name
-              }
+              value={`${analytics.modalRatingName || 'N/A'} (${analytics.modalRatingPct || '0'}%)`}
               backgroundColor="linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"
               textColor="#ffffff"
               iconColor="#ffffff"
@@ -954,9 +1025,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <FeedbackChart
                     title="Canteen Rating Distribution"
                     data={allCanteensBarData}
+                    ratingKeys={(analytics.dynamicRatings || []).map(r => r.label).reverse()}
+                    ratingColors={(analytics.pieColors || []).slice().reverse()}
                   />
                   <p className="text-center text-sm text-gray-500 mt-2">
-                    Percentage distribution of Good, Average, Needs Improvement, Poor per canteen.
+                    Percentage distribution per canteen.
                   </p>
                 </div>
               ) : (
@@ -988,30 +1061,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     <thead>
                       <tr>
                         <th className="px-4 py-3 bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">Feedback Questions</th>
-                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <div className="flex flex-col items-center gap-1">
-                            <RatingFace level={1} size={24} />
-                            <span className="text-red-500 font-bold">Poor</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <div className="flex flex-col items-center gap-1">
-                            <RatingFace level={2} size={24} />
-                            <span className="text-orange-500 font-bold">Needs Imp.</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <div className="flex flex-col items-center gap-1">
-                            <RatingFace level={3} size={24} />
-                            <span className="text-yellow-500 font-bold">Average</span>
-                          </div>
-                        </th>
-                        <th className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <div className="flex flex-col items-center gap-1">
-                            <RatingFace level={4} size={24} />
-                            <span className="text-green-600 font-bold">Good</span>
-                          </div>
-                        </th>
+                        {questionAnalysis.dynamicRatings.map(r => (
+                          <th key={r.level} className="px-2 py-3 bg-gray-50 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <div className="flex flex-col items-center gap-1">
+                              <RatingFace level={Math.min(r.level, 4)} size={24} />
+                              <span className={`${r.color} font-bold`}>
+                                {r.label === 'Needs Improvement' ? 'Needs Imp.' : r.label}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
                         <th className="px-2 py-3 bg-gray-50 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Average</th>
                         <th className="px-2 py-3 bg-gray-50 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Total</th>
                       </tr>
@@ -1022,22 +1081,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                           <td className="px-4 py-4 text-sm font-medium text-blue-800">
                             {idx + 1}. {row.question}
                           </td>
-                          <td className="px-2 py-4 text-center">
-                            <div className="text-red-600 font-bold">{row.poorPct}%</div>
-                            <div className="text-xs text-gray-400">({row.poorCount})</div>
-                          </td>
-                          <td className="px-2 py-4 text-center">
-                            <div className="text-orange-600 font-bold">{row.needsImpPct}%</div>
-                            <div className="text-xs text-gray-400">({row.needsImpCount})</div>
-                          </td>
-                          <td className="px-2 py-4 text-center">
-                            <div className="text-yellow-600 font-bold">{row.avgPct}%</div>
-                            <div className="text-xs text-gray-400">({row.avgCount})</div>
-                          </td>
-                          <td className="px-2 py-4 text-center">
-                            <div className="text-green-600 font-bold">{row.goodPct}%</div>
-                            <div className="text-xs text-gray-400">({row.goodCount})</div>
-                          </td>
+                          {row.levelStats.map(stat => (
+                            <td key={stat.level} className="px-2 py-4 text-center">
+                              <div className={`${stat.color} font-bold`}>{stat.pct}%</div>
+                              <div className="text-xs text-gray-400">({stat.count})</div>
+                            </td>
+                          ))}
                           <td className="px-2 py-4 text-center">
                             <div className="text-blue-600 font-bold text-lg">{row.average}</div>
                             <div className="text-xs text-blue-400">avg</div>
@@ -1094,7 +1143,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                           <PieChartStats
                             title=""
                             data={cStats.pieData}
-                            colors={PIE_COLORS}
+                            colors={analytics.pieColors || PIE_COLORS}
                             bare={true}
                             height={220}
                           />
