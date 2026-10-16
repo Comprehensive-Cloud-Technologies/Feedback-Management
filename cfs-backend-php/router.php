@@ -2,13 +2,20 @@
 // router.php
 
 // 1. Handle CORS globally for the DB-less/Apache-less built-in server
-header("Access-Control-Allow-Origin: *");
+$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '*';
+header("Access-Control-Allow-Origin: $origin");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+$allowedHeaders = isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'])
+    ? $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']
+    : 'Content-Type, Authorization, X-Requested-With, X-Token, x-token, Accept, Cache-Control';
+header("Access-Control-Allow-Headers: $allowedHeaders");
+header("Access-Control-Max-Age: 86400");
 
 // 2. Handle Preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
+    http_response_code(200);
     exit();
 }
 
@@ -31,6 +38,7 @@ $routes = [
     // Resource Routes
     '/sites' => 'api/sites/index.php',
     '/admin/users' => 'api/users/index.php',          // Check if api/users or api/admin/users
+    '/branch-admins' => 'api/branch-admins/index.php',
     '/admin/branch-admins' => 'api/branch-admins/index.php',
     '/feedback' => 'api/feedback/index.php',
     '/questions' => 'api/questions/index.php',

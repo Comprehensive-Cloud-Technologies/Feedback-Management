@@ -72,10 +72,17 @@ try {
                 
                 // Check again after potential auto-migration
                 if (hasColumnSoft('branch_admins', 'logo')) {
-                    Database::execute(
-                        'UPDATE branch_admins SET logo = ? WHERE site = ?',
-                        [$logo, $site]
-                    );
+                    if (hasColumnSoft('branch_admins', 'branch_name')) {
+                        Database::execute(
+                            'UPDATE branch_admins SET logo = ? WHERE site = ? OR branch_name = ?',
+                            [$logo, $site, $site]
+                        );
+                    } else {
+                        Database::execute(
+                            'UPDATE branch_admins SET logo = ? WHERE site = ?',
+                            [$logo, $site]
+                        );
+                    }
                     http_response_code(200);
                     echo json_encode(['success' => true]);
                 } else {
@@ -109,9 +116,16 @@ try {
             }
             
             $hashed = password_hash($password, PASSWORD_BCRYPT);
+            $cols = ['site', 'username', 'password'];
+            $vals = [$site, $username, $hashed];
+            if (hasColumnSoft('branch_admins', 'branch_name')) {
+                $cols[] = 'branch_name';
+                $vals[] = $site;
+            }
+            $ph = implode(',', array_fill(0, count($cols), '?'));
             $success = Database::execute(
-                'INSERT INTO branch_admins (site, username, password) VALUES (?, ?, ?)',
-                [$site, $username, $hashed]
+                'INSERT INTO branch_admins (' . implode(',', $cols) . ') VALUES (' . $ph . ')',
+                $vals
             );
             
             if (!$success) {
@@ -152,6 +166,10 @@ try {
             if ($site) {
                 $updates[] = 'site = ?';
                 $params[] = trim($site);
+                if (hasColumnSoft('branch_admins', 'branch_name')) {
+                    $updates[] = 'branch_name = ?';
+                    $params[] = trim($site);
+                }
             }
             if ($username) {
                 $updates[] = 'username = ?';
