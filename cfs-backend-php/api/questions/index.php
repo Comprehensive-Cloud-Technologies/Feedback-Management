@@ -192,6 +192,7 @@ function handlePost()
     $hasSite = hasColumn('questions', 'site');
     $hasSegmentId = hasColumn('questions', 'segment_id');
     $hasBranchId = hasColumn('questions', 'branch_id');
+    $hasBranchName = hasColumn('questions', 'branch_name');
     $hasResponseType = hasColumn('questions', 'response_type');
     $hasCustomization = hasColumn('questions', 'customization');
 
@@ -202,6 +203,7 @@ function handlePost()
     $siteId = null;
     $segmentId = isset($data['segment_id']) ? $data['segment_id'] : null;
     $branchId = isset($data['branch_id']) ? $data['branch_id'] : null;
+    $branchName = isset($data['branch_name']) ? $data['branch_name'] : ($site ?: '');
     $questionText = $data['question_text'];
     $emoji = $data['emoji'] ?? null;
     $responseType = isset($data['response_type']) ? $data['response_type'] : 'smiley_faces';
@@ -215,15 +217,9 @@ function handlePost()
         }
     }
 
-    if ($hasBranchId) {
-        if ($siteId) {
-            $branchId = $siteId;
-        } elseif ($branchId) {
-            $validSite = Database::fetchOne('SELECT id FROM sites WHERE id = ?', [$branchId]);
-            if (!$validSite) {
-                $branchId = null;
-            }
-        }
+    // If branchId is not set, default it to siteId so site queries find it
+    if ($hasBranchId && $branchId === null && $siteId !== null) {
+        $branchId = $siteId;
     }
 
     try {
@@ -239,9 +235,13 @@ function handlePost()
             $cols[] = 'segment_id';
             $vals[] = $segmentId;
         }
-        if ($hasBranchId && $branchId) {
+        if ($hasBranchId && $branchId !== null) {
             $cols[] = 'branch_id';
             $vals[] = $branchId;
+        }
+        if ($hasBranchName) {
+            $cols[] = 'branch_name';
+            $vals[] = $branchName;
         }
         if ($hasSiteId) {
             $cols[] = 'site_id';
@@ -465,6 +465,31 @@ function ensureQuestionSchema()
         }
     } catch (Throwable $e) {
         error_log('questions add idx_site failed: ' . $e->getMessage());
+    }
+
+    try {
+        // Drop any foreign key constraint on questions.branch_id if present to allow canteen scoping
+        $fk = Database::fetchOne("
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'questions' 
+              AND COLUMN_NAME = 'branch_id' 
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+        ");
+        if ($fk && !empty($fk['CONSTRAINT_NAME'])) {
+            $fkName = $fk['CONSTRAINT_NAME'];
+            Database::execute("ALTER TABLE questions DROP FOREIGN KEY `{$fkName}`");
+        }
+
+        if (hasColumn('questions', 'branch_name')) {
+            Database::execute("ALTER TABLE questions MODIFY COLUMN branch_name VARCHAR(100) NULL DEFAULT ''");
+        }
+        if (hasColumn('questions', 'branch_id')) {
+            Database::execute("ALTER TABLE questions MODIFY COLUMN branch_id INT NULL DEFAULT NULL");
+        }
+    } catch (Throwable $e) {
+        error_log('questions branch columns fix failed: ' . $e->getMessage());
     }
 }
 

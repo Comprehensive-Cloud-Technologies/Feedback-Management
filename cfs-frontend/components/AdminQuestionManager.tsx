@@ -1280,7 +1280,10 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error('Failed to add question');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'Failed to add question');
+      }
 
       setForm({ site: selectedSite, question_text: '', response_type: 'smiley_faces' });
       setCustomization(null);
