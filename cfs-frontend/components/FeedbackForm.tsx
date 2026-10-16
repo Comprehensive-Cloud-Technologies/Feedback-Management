@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { getEndpoints } from '../constants';
-import { RatingLevel, FeedbackResponse } from '../types';
+import { RatingLevel, FeedbackResponse, FormSettings, CustomFieldDefinition } from '../types';
 import SmileyRating from './SmileyRating';
 import { CustomQuestionRenderer } from './CustomQuestionRenderer';
 import catalystLogo from '../src/images/clogo.png';
@@ -27,6 +27,7 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
   const [questions, setQuestions] = useState<Question[]>([]);
 
   const location = useLocation();
+  const { siteSlug, canteenSlug } = useParams<{ siteSlug?: string; canteenSlug?: string }>();
   const getSiteFromQuery = () => {
     const params = new URLSearchParams(location.search);
     return params.get('site') || '';
@@ -57,8 +58,31 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
 
   const [canteen, setCanteen] = useState<string>(initialCanteen);
   const [canteens, setCanteens] = useState<string[]>([]);
+  const [canteenDetails, setCanteenDetails] = useState<any[]>([]);
   const [branchLogo, setBranchLogo] = useState<string>('');
   const endpoints = getEndpoints();
+
+  // Form settings from backend (per-canteen)
+  const [formSettings, setFormSettings] = useState<FormSettings>({
+    enable_fullscreen: 0,
+    collect_user_info: 0,
+    field_name: 0,
+    field_department: 0,
+    field_suggestion: 0,
+    field_meal_slot: 0,
+    field_employee_id: 0,
+    custom_fields: []
+  });
+
+  // User info fields (shown based on formSettings)
+  const [userName, setUserName] = useState('');
+  const [userEmployeeId, setUserEmployeeId] = useState('');
+  const [userDepartment, setUserDepartment] = useState('');
+  const [userSuggestion, setUserSuggestion] = useState('');
+  const [selectedMealSlot, setSelectedMealSlot] = useState('');
+  const [mealSlots, setMealSlots] = useState<{ category: string; startTime: string; endTime: string }[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, any>>({});
+  const [validationWarning, setValidationWarning] = useState<string>('');
 
   // React to URL changes (Deep Linking Fix)
   useEffect(() => {
@@ -75,6 +99,28 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
       setCanteen(newCanteen);
     }
   }, [location.search]);
+
+  // Resolve slug-based URLs (e.g. /f/acg-shirwal/acg-pharma)
+  const [slugError, setSlugError] = useState('');
+  useEffect(() => {
+    if (!siteSlug || !canteenSlug) return;
+    const resolveLink = async () => {
+      try {
+        const res = await fetch(`${endpoints.RESOLVE_LINK}?site_slug=${encodeURIComponent(siteSlug)}&canteen_slug=${encodeURIComponent(canteenSlug)}`);
+        const data = await res.json();
+        if (res.ok && data.site && data.canteen) {
+          setSite(data.site);
+          setCanteen(data.canteen);
+          setSlugError('');
+        } else {
+          setSlugError(data.error || 'Invalid feedback link');
+        }
+      } catch {
+        setSlugError('Failed to resolve feedback link');
+      }
+    };
+    resolveLink();
+  }, [siteSlug, canteenSlug]);
 
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,10 +174,37 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
 
       const canteenList = Array.isArray(canteenData?.details) ? canteenData.details : [];
       setCanteens(canteenList.map((c: any) => c.name));
+      setCanteenDetails(canteenList);
 
       // Identify the current canteen's ID to filter questions
       const selectedCanteenObj = canteenList.find((c: any) => c.name === canteen);
       const canteenId = selectedCanteenObj?.id;
+
+      // Load meal slots for selected canteen
+      if (selectedCanteenObj?.meal_slots && Array.isArray(selectedCanteenObj.meal_slots)) {
+        setMealSlots(selectedCanteenObj.meal_slots);
+      } else {
+        setMealSlots([]);
+      }
+
+      // Fetch form settings for this canteen
+      if (canteenId) {
+        try {
+          const settingsRes = await fetch(`${endpoints.FORM_SETTINGS}?canteen_id=${canteenId}`);
+          const settingsData = await settingsRes.json();
+          if (settingsData.settings) {
+            setFormSettings(settingsData.settings);
+            // Auto-enter fullscreen if enabled for this canteen
+            if (settingsData.settings.enable_fullscreen && !document.fullscreenElement) {
+              document.documentElement.requestFullscreen().catch(() => {});
+            }
+          } else {
+            setFormSettings({ enable_fullscreen: 0, collect_user_info: 0, field_name: 0, field_department: 0, field_suggestion: 0, field_meal_slot: 0, field_employee_id: 0, custom_fields: [] });
+          }
+        } catch {
+          setFormSettings({ enable_fullscreen: 0, collect_user_info: 0, field_name: 0, field_department: 0, field_suggestion: 0, field_meal_slot: 0, field_employee_id: 0, custom_fields: [] });
+        }
+      }
 
       // Set branch logo
       if (Array.isArray(branchData) && branchData.length > 0 && branchData[0].logo) {
@@ -198,39 +271,129 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
 
 
 
-  const handleRatingChange = (questionId: number, level: RatingLevel) => {
-    setRatings(prev => ({ ...prev, [questionId]: level }));
+  const isRatingType = (type?: string) => {
+    return !type || type === 'smiley_faces' || type === 'star_rating' || type === 'scale' || type === 'yes_no';
   };
 
+  const handleRatingChange = (questionId: number, level: any) => {
+    setRatings(prev => ({ ...prev, [questionId]: level }));
+    if (validationWarning) setValidationWarning('');
+  };
 
+  const ratingQuestions = questions.filter(q => isRatingType(q.response_type));
+  const isAllRatingsAnswered = ratingQuestions.length === 0 || ratingQuestions.every(q => {
+    const val = ratings[q.id];
+    return val !== undefined && val !== null && val !== '';
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!site || !canteen) return;
 
-    if (Object.keys(ratings).length !== questions.length) {
-      alert('Please answer all questions before submitting.');
+    if (!isAllRatingsAnswered) {
+      setValidationWarning('Please answer all rating questions before submitting.');
       return;
     }
 
+    // Soft warning check for required non-rating questions
+    for (const q of questions) {
+      if (!isRatingType(q.response_type) && q.customization?.required) {
+        const val = ratings[q.id];
+        const isBlank = val === undefined || val === null || val === '' ||
+          (Array.isArray(val) && val.length === 0) ||
+          (typeof val === 'object' && (!val.answer || (val.answer === '__other__' && !val.other_text?.trim())));
+        if (isBlank) {
+          setValidationWarning(`Please answer the required question: "${q.question_text || 'Required question'}"`);
+          return;
+        }
+      }
+    }
+
+    // Soft warning check for required custom user info fields
+    if (formSettings.collect_user_info && Array.isArray(formSettings.custom_fields)) {
+      for (const cf of formSettings.custom_fields) {
+        if (cf.enabled !== false && cf.required) {
+          const val = customFieldValues[cf.id];
+          const isBlank = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+          if (isBlank) {
+            setValidationWarning(`Please fill out the required field: "${cf.label || 'Custom Field'}"`);
+            return;
+          }
+        }
+      }
+    }
+
     setIsSubmitting(true);
-    const responses: FeedbackResponse[] = questions.map(q => ({
-      questionId: q.id,
-      rating: ratings[q.id]!,
-      question_text: q.question_text || q.text || 'Unknown Question',
-      emoji: '😐' // Default emoji since we removed dynamic ones from question object. Or if we have them, use q.emoji
-    }));
+    setValidationWarning('');
+
+    const responses: FeedbackResponse[] = questions.map(q => {
+      const val = ratings[q.id];
+      const qType = q.response_type || 'smiley_faces';
+
+      if (isRatingType(qType)) {
+        let ratingLabel = '';
+        const opts = q.customization?.options;
+        if (Array.isArray(opts)) {
+          const matched = opts.find((o: any) => o.value === val);
+          if (matched) ratingLabel = matched.label;
+        }
+        return {
+          questionId: q.id,
+          rating: typeof val === 'number' ? val : (parseInt(String(val), 10) || 0),
+          question_text: q.question_text || q.text || 'Unknown Question',
+          emoji: '😐',
+          response_type: qType as any,
+          ...(ratingLabel ? { rating_label: ratingLabel } : {})
+        };
+      } else {
+        let answerStr = '';
+        let otherText: string | undefined = undefined;
+
+        if (typeof val === 'object' && val !== null) {
+          if (Array.isArray(val)) {
+            answerStr = JSON.stringify(val);
+          } else {
+            answerStr = val.answer === '__other__' ? (val.other_text || 'Other') : (val.answer || '');
+            otherText = val.other_text;
+          }
+        } else if (val !== undefined && val !== null) {
+          answerStr = String(val);
+        }
+
+        return {
+          questionId: q.id,
+          question_text: q.question_text || q.text || 'Unknown Question',
+          response_type: qType as any,
+          answer: answerStr,
+          ...(otherText ? { other_text: otherText } : {})
+        };
+      }
+    });
 
     console.log('Submitting feedback:', { site, canteen, responses, userId: userInfo.id, username });
 
     try {
+      const submitPayload: any = { site, canteen, responses, userId: userInfo.id || null, username };
+
+      // Include additional user info fields if collected
+      if (formSettings.collect_user_info) {
+        if (formSettings.field_name && userName) submitPayload.user_name = userName;
+        if (formSettings.field_employee_id && userEmployeeId) submitPayload.user_employee_id = userEmployeeId;
+        if (formSettings.field_department && userDepartment) submitPayload.user_department = userDepartment;
+        if (formSettings.field_suggestion && userSuggestion) submitPayload.user_suggestion = userSuggestion;
+        if (formSettings.field_meal_slot && selectedMealSlot) submitPayload.selected_meal_slot = selectedMealSlot;
+        if (Object.keys(customFieldValues).length > 0) {
+          submitPayload.custom_field_values = customFieldValues;
+        }
+      }
+
       const res = await fetch(endpoints.SUBMIT_FEEDBACK, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(jwt ? { Authorization: `Bearer ${jwt}` } : {})
         },
-        body: JSON.stringify({ site, canteen, responses, userId: userInfo.id || null, username })
+        body: JSON.stringify(submitPayload)
       });
 
       const responseData = await res.json();
@@ -243,9 +406,13 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
       } else {
         setIsSubmitted(true);
         setRatings({});
-        // We no longer reset canteen here to allow "Submit Another" to work directly
+        setCustomFieldValues({});
         setUsername(userInfo.username || '');
-        // Automatically reopen the form after 2 seconds
+        setUserName('');
+        setUserEmployeeId('');
+        setUserDepartment('');
+        setUserSuggestion('');
+        setSelectedMealSlot('');
         setTimeout(() => setIsSubmitted(false), 2000);
       }
     } catch (err) {
@@ -280,6 +447,16 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
 
   return (
     <div className="h-[100dvh] w-screen flex flex-col bg-gray-50 font-sans text-gray-800 overflow-hidden relative">
+
+      {slugError && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-50">
+          <div className="text-center p-8">
+            <div className="text-6xl mb-4">🔗</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Invalid Link</h2>
+            <p className="text-gray-500">{slugError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Top Left Logout Button */}
       {onLogout && (
@@ -326,50 +503,52 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
                 alt="Branch Logo"
                 className="h-11 sm:h-14 md:h-16 w-auto object-contain max-w-[80px] sm:max-w-[110px] md:max-w-[140px]"
               />
-              <button
-                onClick={toggleFullscreen}
-                className="flex-shrink-0 p-1.5 sm:p-2 bg-white/50 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-primary-600 transition-all"
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  {isFullscreen ? (
-                    <path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" />
-                  ) : (
-                    <path d="M3 8V3h5M16 3h5v5M3 16v5h5M16 21h5v-5" />
-                  )}
-                </svg>
-              </button>
+              {!!formSettings.enable_fullscreen && (
+                <button
+                  onClick={toggleFullscreen}
+                  className="flex-shrink-0 p-1.5 sm:p-2 bg-white/50 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-primary-600 transition-all"
+                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    {isFullscreen ? (
+                      <path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" />
+                    ) : (
+                      <path d="M3 8V3h5M16 3h5v5M3 16v5h5M16 21h5v-5" />
+                    )}
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         </header>
 
-        {/* Center Questions Area - Flex Grow / Stretch / Scroll Restricted */}
+        {/* Center Questions Area - Scrollable & Responsive */}
         <div className="flex-grow min-h-0 w-full max-w-4xl mx-auto px-2 sm:px-4 py-0.5 flex flex-col overflow-hidden">
           {site && canteen && questions.length > 0 ? (
-            <div className="flex-grow flex flex-col min-h-0 overflow-hidden">
-              <div className="flex-grow flex flex-col min-h-0 overflow-hidden px-1 sm:px-2">
+            <div className="flex-grow min-h-0 overflow-y-auto overflow-x-hidden px-1 sm:px-2 scrollbar-hide">
+              <div className="flex flex-col gap-1 sm:gap-1.5 py-0.5">
                 {questions.map((q, idx) => {
                   const questionCount = questions.length;
                   const containerPadding =
-                    questionCount <= 2 ? 'p-3 sm:p-4' :
-                      questionCount <= 3 ? 'p-1 sm:p-2' :
-                        questionCount <= 4 ? 'p-1' : 'p-0.5';
+                    questionCount <= 2 ? 'p-3 sm:p-4 md:p-5' :
+                      questionCount <= 3 ? 'p-2 sm:p-3 md:p-4' :
+                        questionCount <= 4 ? 'p-1.5 sm:p-2 md:p-3' : 'p-1 sm:p-1.5 md:p-2';
 
                   const titleSize =
-                    questionCount <= 2 ? 'text-2xl sm:text-3xl' :
-                      questionCount <= 3 ? 'text-base sm:text-xl md:text-2xl' :
-                        questionCount <= 4 ? 'text-sm sm:text-lg md:text-xl' : 'text-sm sm:text-base md:text-lg';
+                    questionCount <= 2 ? 'text-lg sm:text-2xl md:text-3xl' :
+                      questionCount <= 3 ? 'text-base sm:text-lg md:text-2xl' :
+                        questionCount <= 4 ? 'text-sm sm:text-base md:text-xl' : 'text-xs sm:text-sm md:text-lg';
 
                   return (
                     <div
                       key={q.id}
-                      className={`flex-1 min-h-0 bg-white rounded-xl ${containerPadding} shadow-sm border border-gray-100 flex flex-col items-center justify-center transition-all hover:shadow-md hover:border-primary-200 mb-0.5`}
+                      className={`bg-white rounded-xl ${containerPadding} shadow-sm border border-gray-100 flex flex-col items-center justify-center transition-all hover:shadow-md hover:border-primary-200 flex-shrink-0`}
                     >
-                      <h3 className={`${titleSize} font-bold text-gray-800 mb-0.5 text-center leading-tight truncate w-full px-2`}>
+                      <h3 className={`${titleSize} font-bold text-gray-800 mb-0.5 sm:mb-1 text-center leading-snug w-full px-2`}>
                         {q.question_text}
                       </h3>
 
-                      <div className="w-full flex justify-center scale-[0.85] sm:scale-100 origin-center transition-transform">
+                      <div className="w-full flex justify-center scale-[0.80] sm:scale-[0.90] md:scale-100 origin-center transition-transform">
                         <CustomQuestionRenderer
                           question={{
                             ...q,
@@ -391,6 +570,158 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
                     </div>
                   );
                 })}
+
+                {/* User Info Fields — inline after questions, same width */}
+                {!!formSettings.collect_user_info && (
+                  <div className="flex-shrink-0 space-y-2 mt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {!!formSettings.field_name && (
+                        <input
+                          type="text"
+                          value={userName}
+                          onChange={e => setUserName(e.target.value)}
+                          placeholder="Your Name"
+                          className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                        />
+                      )}
+                      {!!formSettings.field_employee_id && (
+                        <input
+                          type="text"
+                          value={userEmployeeId}
+                          onChange={e => setUserEmployeeId(e.target.value)}
+                          placeholder="Employee ID"
+                          className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                        />
+                      )}
+                      {!!formSettings.field_suggestion && (
+                        <input
+                          type="text"
+                          value={userSuggestion}
+                          onChange={e => setUserSuggestion(e.target.value)}
+                          placeholder="Your suggestions or comments..."
+                          className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                        />
+                      )}
+                      {!!formSettings.field_department && (
+                        <input
+                          type="text"
+                          value={userDepartment}
+                          onChange={e => setUserDepartment(e.target.value)}
+                          placeholder="Department"
+                          className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                        />
+                      )}
+                    </div>
+                    {!!formSettings.field_meal_slot && mealSlots.length > 0 && (
+                      <select
+                        value={selectedMealSlot}
+                        onChange={e => setSelectedMealSlot(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 appearance-none cursor-pointer text-gray-500"
+                      >
+                        <option value="">Select Meal Slot...</option>
+                        {mealSlots.map((slot, idx) => (
+                          <option key={idx} value={slot.category}>{slot.category}{slot.startTime && slot.endTime ? ` (${slot.startTime} - ${slot.endTime})` : ''}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Dynamic Custom Fields */}
+                    {Array.isArray(formSettings.custom_fields) && formSettings.custom_fields.filter(cf => cf.enabled !== false).length > 0 && (
+                      <div className="pt-2 border-t border-gray-200/60 space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {formSettings.custom_fields.filter(cf => cf.enabled !== false).map(cf => (
+                            <div key={cf.id} className="w-full">
+                              {cf.type === 'text' && (
+                                <input
+                                  type="text"
+                                  value={customFieldValues[cf.id] || ''}
+                                  onChange={e => {
+                                    setCustomFieldValues(prev => ({ ...prev, [cf.id]: e.target.value }));
+                                    if (validationWarning) setValidationWarning('');
+                                  }}
+                                  placeholder={`${cf.label}${cf.required ? ' *' : ''}`}
+                                  className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                                />
+                              )}
+                              {cf.type === 'dropdown_single' && (
+                                <select
+                                  value={customFieldValues[cf.id] || ''}
+                                  onChange={e => {
+                                    setCustomFieldValues(prev => ({ ...prev, [cf.id]: e.target.value }));
+                                    if (validationWarning) setValidationWarning('');
+                                  }}
+                                  className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 cursor-pointer text-gray-700"
+                                >
+                                  <option value="">{`Select ${cf.label}${cf.required ? ' *' : ''}...`}</option>
+                                  {(cf.options || []).map((opt, optIdx) => (
+                                    <option key={optIdx} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              )}
+                              {cf.type === 'dropdown_multi' && (
+                                <div className="p-2 bg-gray-50 border border-gray-400 rounded-lg">
+                                  <label className="text-xs font-semibold text-gray-600 block mb-1">
+                                    {cf.label}{cf.required ? ' *' : ''} <span className="text-[10px] text-gray-400">(multi-select)</span>
+                                  </label>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(cf.options || []).map((opt, optIdx) => {
+                                      const currentSelected: string[] = customFieldValues[cf.id] || [];
+                                      const isSel = currentSelected.includes(opt);
+                                      return (
+                                        <button
+                                          key={optIdx}
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = isSel
+                                              ? currentSelected.filter(item => item !== opt)
+                                              : [...currentSelected, opt];
+                                            setCustomFieldValues(prev => ({ ...prev, [cf.id]: updated }));
+                                            if (validationWarning) setValidationWarning('');
+                                          }}
+                                          className={`px-2 py-0.5 text-xs rounded-md font-medium border transition-all ${
+                                            isSel
+                                              ? 'bg-primary-600 text-white border-primary-600 shadow-xs'
+                                              : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400'
+                                          }`}
+                                        >
+                                          {isSel ? '✓ ' : '+ '}{opt}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Validation Warning Notice */}
+                {validationWarning && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs sm:text-sm font-semibold flex items-center gap-2 animate-bounce flex-shrink-0">
+                    <span>⚠️</span>
+                    <span>{validationWarning}</span>
+                  </div>
+                )}
+
+                {/* Submit Button — inline after fields */}
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || !isAllRatingsAnswered}
+                  className="w-full flex-shrink-0 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm sm:text-base py-2.5 sm:py-4 rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1 mb-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin h-5 w-5 border-3 border-white/30 border-t-white rounded-full"></div>
+                      Submitting...
+                    </>
+                  ) : (
+                    <>Submit Feedback</>
+                  )}
+                </button>
               </div>
             </div>
           ) : (
@@ -437,26 +768,6 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
             </div>
           )}
         </div>
-
-        {/* BOTTOM LAYER: Fixed Footer / Submit Button */}
-        {site && canteen && questions.length > 0 && (
-          <footer className="p-2 sm:p-3 bg-white border-t border-gray-100 flex-shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] w-full">
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || Object.keys(ratings).length !== questions.length}
-              className="w-full max-w-xl mx-auto bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm sm:text-base py-2.5 sm:py-4 rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="animate-spin h-5 w-5 border-3 border-white/30 border-t-white rounded-full"></div>
-                  Submitting...
-                </>
-              ) : (
-                <>Submit Feedback</>
-              )}
-            </button>
-          </footer>
-        )}
       </main>
     </div>
   );

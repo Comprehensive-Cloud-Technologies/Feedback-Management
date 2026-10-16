@@ -96,13 +96,20 @@ function handleGet()
         }
     }
 
-    // Decode JSON responses
+    // Decode JSON responses & custom_field_values
     foreach ($feedback as &$row) {
         if (isset($row['responses']) && is_string($row['responses'])) {
             $decoded = json_decode($row['responses'], true);
             $row['responses'] = is_array($decoded) ? $decoded : [];
         } elseif (!isset($row['responses']) || !is_array($row['responses'])) {
             $row['responses'] = [];
+        }
+
+        if (isset($row['custom_field_values']) && is_string($row['custom_field_values'])) {
+            $decodedCf = json_decode($row['custom_field_values'], true);
+            $row['custom_field_values'] = is_array($decodedCf) ? $decodedCf : [];
+        } elseif (!isset($row['custom_field_values']) || !is_array($row['custom_field_values'])) {
+            $row['custom_field_values'] = [];
         }
     }
     unset($row);
@@ -124,6 +131,11 @@ function handlePost()
         $responses = $data['responses'];
         $userId = $data['userId'] ?? null;
         $username = $data['username'] ?? null;
+        $userNameField = isset($data['user_name']) ? trim($data['user_name']) : null;
+        $userDepartment = isset($data['user_department']) ? trim($data['user_department']) : null;
+        $userSuggestion = isset($data['user_suggestion']) ? trim($data['user_suggestion']) : null;
+        $userEmployeeId = isset($data['user_employee_id']) ? trim($data['user_employee_id']) : null;
+        $selectedMealSlot = isset($data['selected_meal_slot']) ? trim($data['selected_meal_slot']) : null;
 
         error_log("Feedback submission: site=$site, canteen=$canteen, responses count=" . (is_array($responses) ? count($responses) : 'NOT_ARRAY'));
 
@@ -147,13 +159,17 @@ function handlePost()
             return;
         }
 
-        // Calculate overall rating (average)
+        // Calculate overall rating (average of numeric ratings only)
         $totalRating = 0;
+        $ratingCount = 0;
         foreach ($responses as $response) {
-            $totalRating += (is_array($response) && isset($response['rating'])) ? floatval($response['rating']) : 0;
+            if (is_array($response) && isset($response['rating']) && is_numeric($response['rating'])) {
+                $totalRating += floatval($response['rating']);
+                $ratingCount++;
+            }
         }
-        $overallRating = count($responses) > 0 ? round($totalRating / count($responses), 2) : 0;
-        error_log("Calculated rating: $overallRating from " . count($responses) . " responses");
+        $overallRating = $ratingCount > 0 ? round($totalRating / $ratingCount, 2) : 0;
+        error_log("Calculated rating: $overallRating from $ratingCount numeric responses (out of " . count($responses) . " total responses)");
 
         // Get Canteen & Calculate Meal Category
         $mealCategory = 'Other';
@@ -255,6 +271,61 @@ function handlePost()
         if (hasColumnSoft('feedback', 'site')) {
             $cols[] = 'site';
             $vals[] = $site;
+        }
+
+        // User info fields (from form settings)
+        if ($userNameField !== null && hasColumnSoft('feedback', 'user_name')) {
+            $cols[] = 'user_name';
+            $vals[] = $userNameField;
+        }
+        if ($userDepartment !== null && hasColumnSoft('feedback', 'user_department')) {
+            $cols[] = 'user_department';
+            $vals[] = $userDepartment;
+        }
+        if ($userSuggestion !== null && hasColumnSoft('feedback', 'user_suggestion')) {
+            $cols[] = 'user_suggestion';
+            $vals[] = $userSuggestion;
+        }
+        if ($userEmployeeId !== null && hasColumnSoft('feedback', 'user_employee_id')) {
+            $cols[] = 'user_employee_id';
+            $vals[] = $userEmployeeId;
+        }
+        if ($selectedMealSlot !== null && hasColumnSoft('feedback', 'selected_meal_slot')) {
+            $cols[] = 'selected_meal_slot';
+            $vals[] = $selectedMealSlot;
+        }
+
+        // Custom field values (from dynamic form settings)
+        $customFieldValues = null;
+        if (isset($data['custom_field_values'])) {
+            $rawValues = $data['custom_field_values'];
+            if (is_string($rawValues)) {
+                $decodedValues = json_decode($rawValues, true);
+                if (is_array($decodedValues)) {
+                    $customFieldValues = $decodedValues;
+                }
+            } elseif (is_array($rawValues)) {
+                $customFieldValues = $rawValues;
+            }
+        }
+
+        if ($customFieldValues && hasColumnSoft('feedback', 'custom_field_values')) {
+            $sanitizedCustomFields = [];
+            foreach ($customFieldValues as $k => $v) {
+                $sanitizedKey = preg_replace('/[^a-zA-Z0-9_\-]/', '', strval($k));
+                if (empty($sanitizedKey)) continue;
+                if (is_array($v)) {
+                    $sanitizedCustomFields[$sanitizedKey] = array_map(function($item) {
+                        return trim(strip_tags(strval($item)));
+                    }, $v);
+                } else {
+                    $sanitizedCustomFields[$sanitizedKey] = trim(strip_tags(strval($v)));
+                }
+            }
+            if (!empty($sanitizedCustomFields)) {
+                $cols[] = 'custom_field_values';
+                $vals[] = json_encode($sanitizedCustomFields, JSON_UNESCAPED_UNICODE);
+            }
         }
 
         $ph = implode(',', array_fill(0, count($cols), '?'));
@@ -363,6 +434,26 @@ function ensureFeedbackSchema()
                     error_log('feedback add FK site_id failed: ' . $e->getMessage());
                 }
             }
+        }
+
+        // Ensure user info columns exist
+        if (!hasColumnSoft('feedback', 'user_name')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN user_name VARCHAR(100) DEFAULT NULL AFTER meal_category");
+        }
+        if (!hasColumnSoft('feedback', 'user_department')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN user_department VARCHAR(100) DEFAULT NULL AFTER user_name");
+        }
+        if (!hasColumnSoft('feedback', 'user_suggestion')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN user_suggestion TEXT DEFAULT NULL AFTER user_department");
+        }
+        if (!hasColumnSoft('feedback', 'user_employee_id')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN user_employee_id VARCHAR(100) DEFAULT NULL AFTER user_suggestion");
+        }
+        if (!hasColumnSoft('feedback', 'selected_meal_slot')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN selected_meal_slot VARCHAR(100) DEFAULT NULL AFTER user_suggestion");
+        }
+        if (!hasColumnSoft('feedback', 'custom_field_values')) {
+            Database::execute("ALTER TABLE feedback ADD COLUMN custom_field_values JSON DEFAULT NULL");
         }
 
         // Ensure FK on canteen_id if possible

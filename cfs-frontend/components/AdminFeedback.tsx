@@ -362,23 +362,79 @@ const AdminFeedback: React.FC = () => {
               let csvContent = 'data:text/csv;charset=utf-8,';
               // Add BOM for Excel correct display of characters
               csvContent += '\uFEFF';
-              csvContent += '"ID","Timestamp","Site","Canteen","Username","Meal Slot","OverallRating","Response Details"\r\n';
-              filteredFeedback.forEach((fb: any) => {
-                // Format responses into a single string for the CSV cell
-                const responseDetails = (fb.responses || []).map((r: any) =>
-                  `${r.question_text || 'Q'}: ${r.rating} ${r.emoji || ''}`
-                ).join(' | ');
 
+              // Collect all unique custom field keys
+              const allCustomFieldKeys: string[] = [];
+              filteredFeedback.forEach((fb: any) => {
+                if (fb.custom_field_values && typeof fb.custom_field_values === 'object') {
+                  Object.keys(fb.custom_field_values).forEach(k => {
+                    if (!allCustomFieldKeys.includes(k)) allCustomFieldKeys.push(k);
+                  });
+                }
+              });
+
+              // Collect all unique question texts across all feedback to create dynamic columns
+              const allQuestionTexts: string[] = [];
+              filteredFeedback.forEach((fb: any) => {
+                (fb.responses || []).forEach((r: any) => {
+                  const qText = r.question_text || 'Unknown Question';
+                  if (!allQuestionTexts.includes(qText)) allQuestionTexts.push(qText);
+                });
+              });
+
+              // Build header row with dynamic custom field and question columns
+              const headerCols = ['"ID"', '"Timestamp"', '"Site"', '"Canteen"', '"Name"', '"Employee ID"', '"Department"', '"Meal Slot"', '"Suggestion"', '"Overall Rating"'];
+              allCustomFieldKeys.forEach(cfk => headerCols.push(`"[Field] ${cfk.replace(/"/g, '""')}"`));
+              allQuestionTexts.forEach(qt => headerCols.push(`"[Q] ${qt.replace(/"/g, '""')}"`));
+              csvContent += headerCols.join(',') + '\r\n';
+
+              filteredFeedback.forEach((fb: any) => {
                 const row = [
                   `"${fb.id}"`,
                   `"${new Date(fb.timestamp).toLocaleString()}"`,
                   `"${fb.site}"`,
                   `"${fb.canteen || fb.canteen_id}"`,
-                  `"${fb.username || ''}"`,
+                  `"${(fb.user_name || '').replace(/"/g, '""')}"`,
+                  `"${(fb.user_employee_id || '').replace(/"/g, '""')}"`,
+                  `"${(fb.user_department || '').replace(/"/g, '""')}"`,
                   `"${fb.meal_category || 'Other'}"`,
-                  `"${fb.overallRating}"`,
-                  `"${responseDetails.replace(/"/g, '""')}"` // Escape quotes
+                  `"${(fb.user_suggestion || '').replace(/"/g, '""')}"`,
+                  `"${fb.overallRating}"`
                 ];
+
+                // Add custom field values
+                const cfValues = fb.custom_field_values || {};
+                allCustomFieldKeys.forEach(cfk => {
+                  const val = cfValues[cfk];
+                  const displayVal = Array.isArray(val) ? val.join('; ') : (val !== undefined && val !== null ? String(val) : '');
+                  row.push(`"${displayVal.replace(/"/g, '""')}"`);
+                });
+
+                // Add each question's rating or answer in its own column
+                const responsesMap: Record<string, any> = {};
+                (fb.responses || []).forEach((r: any) => {
+                  const qText = r.question_text || 'Unknown Question';
+                  responsesMap[qText] = r;
+                });
+                allQuestionTexts.forEach(qt => {
+                  const r = responsesMap[qt];
+                  if (!r) {
+                    row.push('""');
+                  } else if (typeof r.rating === 'number' && !isNaN(r.rating) && r.rating !== null) {
+                    row.push(`"${r.rating}"`);
+                  } else {
+                    let ans = r.answer || '';
+                    if (typeof ans === 'string' && ans.startsWith('[') && ans.endsWith(']')) {
+                      try {
+                        const parsed = JSON.parse(ans);
+                        if (Array.isArray(parsed)) ans = parsed.join('; ');
+                      } catch {}
+                    }
+                    if (r.other_text) ans += ` (Other: ${r.other_text})`;
+                    row.push(`"${String(ans).replace(/"/g, '""')}"`);
+                  }
+                });
+
                 csvContent += row.join(',') + '\r\n';
               });
               const encodedUri = encodeURI(csvContent);
@@ -409,8 +465,8 @@ const AdminFeedback: React.FC = () => {
               /* Hide "Actions" column (last column) */
               th:last-child, td:last-child { display: none; }
               /* Table styling for print */
-              table { width: 100%; border-collapse: collapse; font-size: 11px; }
-              th, td { border: 1px solid #333 !important; padding: 4px; text-align: left; }
+              table { width: 100%; border-collapse: collapse; font-size: 9px; }
+              th, td { border: 1px solid #333 !important; padding: 3px; text-align: left; }
               thead tr { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
             }
           `}</style>
@@ -424,7 +480,9 @@ const AdminFeedback: React.FC = () => {
               <th className="p-3 border">Timestamp</th>
               <th className="p-3 border">Site</th>
               <th className="p-3 border">Canteen</th>
-              <th className="p-3 border">Username</th>
+              <th className="p-3 border">Name</th>
+              <th className="p-3 border">Employee ID</th>
+              <th className="p-3 border">Department</th>
               <th className="p-3 border">Meal Slot</th>
               <th className="p-3 border">Overall Rating</th>
               <th className="p-3 border">Actions</th>
@@ -436,7 +494,9 @@ const AdminFeedback: React.FC = () => {
                 <td className="p-3 border">{new Date(fb.timestamp).toLocaleString()}</td>
                 <td className="p-3 border">{fb.site}</td>
                 <td className="p-3 border">{fb.canteen || fb.canteen_id}</td>
-                <td className="p-3 border">{fb.username || <span style={{ color: '#aaa' }}>-</span>}</td>
+                <td className="p-3 border">{fb.user_name || <span style={{ color: '#aaa' }}>-</span>}</td>
+                <td className="p-3 border">{fb.user_employee_id || <span style={{ color: '#aaa' }}>-</span>}</td>
+                <td className="p-3 border">{fb.user_department || <span style={{ color: '#aaa' }}>-</span>}</td>
                 <td className="p-3 border">
                   <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs border border-blue-100 font-medium">
                     {fb.meal_category || 'Other'}
@@ -495,17 +555,67 @@ const AdminFeedback: React.FC = () => {
                 <p className="text-sm text-gray-600">Canteen: {fb.canteen || fb.canteen_id}</p>
                 <p className="text-sm text-gray-600">Meal Slot: <span className="font-semibold text-primary-600">{fb.meal_category || 'Other'}</span></p>
                 {fb.username && <p className="text-sm text-gray-600">User: {fb.username}</p>}
+                {fb.user_name && <p className="text-sm text-gray-600">Name: <span className="font-semibold">{fb.user_name}</span></p>}
+                {fb.user_employee_id && <p className="text-sm text-gray-600">Employee ID: <span className="font-semibold">{fb.user_employee_id}</span></p>}
+                {fb.user_department && <p className="text-sm text-gray-600">Department: <span className="font-semibold">{fb.user_department}</span></p>}
+                {fb.selected_meal_slot && <p className="text-sm text-gray-600">Selected Meal: <span className="font-semibold">{fb.selected_meal_slot}</span></p>}
+                {fb.user_suggestion && (
+                  <div className="mt-2 p-2 bg-yellow-50 rounded-lg border border-yellow-100">
+                    <p className="text-xs font-semibold text-yellow-700 mb-0.5">Suggestion:</p>
+                    <p className="text-sm text-gray-700">{fb.user_suggestion}</p>
+                  </div>
+                )}
+                {fb.custom_field_values && typeof fb.custom_field_values === 'object' && Object.keys(fb.custom_field_values).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Field Values:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(fb.custom_field_values).map(([k, v]: [string, any]) => (
+                        <div key={k} className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
+                          <span className="font-semibold text-gray-600 block">{k}:</span>
+                          <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="border-t pt-4">
-                <h4 className="font-semibold text-gray-700 mb-3">Question-wise Ratings</h4>
+                <h4 className="font-semibold text-gray-700 mb-3">Question-wise Responses</h4>
                 <ul className="space-y-4">
                   {(fb.responses || []).map((r: any, idx: number) => {
                     const rating = r.rating;
+                    const isNumericRating = typeof rating === 'number' && !isNaN(rating) && rating !== null;
+
+                    if (!isNumericRating) {
+                      let displayAns = r.answer || '';
+                      if (typeof displayAns === 'string' && displayAns.startsWith('[') && displayAns.endsWith(']')) {
+                        try {
+                          const parsed = JSON.parse(displayAns);
+                          if (Array.isArray(parsed)) displayAns = parsed.join(', ');
+                        } catch {}
+                      }
+                      return (
+                        <li key={r.question_id || idx} className="p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <p className="font-medium text-gray-800 mb-1.5">{r.question_text || 'Unknown Question'}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full">
+                              {displayAns || 'No response'}
+                            </span>
+                            {r.other_text && (
+                              <span className="text-xs text-gray-600 italic">
+                                (Detail: {r.other_text})
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    }
+
                     const emoji = r.emoji || (rating ? (
                       rating >= 4 ? '😀' : rating === 3 ? '🙂' : rating === 2 ? '😐' : '😞'
                     ) : '❓');
 
-                    const ratingText = (() => {
+                    const ratingText = r.rating_label || (() => {
                       switch (rating) {
                         case 4: return 'Good';
                         case 3: return 'Average';
@@ -515,8 +625,9 @@ const AdminFeedback: React.FC = () => {
                       }
                     })();
 
-                    // compute width percent using detected max scale (4 if max rating <=4 else 5)
-                    const maxScale = (rating && rating <= 4) ? 4 : 5;
+                    // Determine max scale dynamically from all responses in this feedback
+                    const allRatings = (fb.responses || []).map((resp: any) => Number(resp.rating) || 0);
+                    const maxScale = Math.max(...allRatings, 1);
                     const percent = rating ? Math.round((Number(rating) / maxScale) * 100) : 0;
 
                     return (

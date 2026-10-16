@@ -11,6 +11,10 @@ import { FeedbackSubmission, Question, RatingLevel, Canteen, MealSlot } from '..
 import { RATINGS, getEndpoints, FRONTEND_URL, RATING_LABELS } from '../constants';
 import catalystLogo from '../src/images/clogo.png';
 
+const toSlug = (name: string) => {
+  return name.toLowerCase().replace(/[&]+/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+};
+
 interface BranchAdminDashboardProps {
     site: string;
     onLogout: () => void;
@@ -43,6 +47,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [notification, setNotification] = useState<string | null>(null);
+    const [branchLogo, setBranchLogo] = useState<string>('');
 
     // Filters
     const [selectedCanteen, setSelectedCanteen] = useState<string>('All Canteens');
@@ -108,6 +113,17 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                     setCanteens([]);
                 }
             }
+
+            // 4. Fetch Branch Logo
+            try {
+                const bRes = await fetch(`${endpoints.ADMIN_BRANCH_ADMINS}?site=${encodeURIComponent(site)}`, { headers });
+                if (bRes.ok) {
+                    const bData = await bRes.json();
+                    if (bData.branch_admins?.length > 0 && bData.branch_admins[0].logo) {
+                        setBranchLogo(bData.branch_admins[0].logo);
+                    }
+                }
+            } catch {}
 
         } catch (err: any) {
             console.error(err);
@@ -192,15 +208,100 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
     // --- Analytics Calculation ---
     const analytics = useMemo(() => {
-        const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        // Step 1: Determine dynamic rating levels from question customization or feedback data
+        const qMap: Record<string, any> = {};
+        questions.forEach(q => qMap[String(q.id)] = q);
+
+        // First, try to get the rating scale from question customization (source of truth)
+        let customMaxRating = 0;
+        let customLabels: string[] = [];
+        let customColors: string[] = [];
+        for (const q of questions) {
+            const cust = (q as any).customization;
+            if (cust && cust.options && Array.isArray(cust.options) && cust.options.length >= 2) {
+                const sorted = [...cust.options].sort((a: any, b: any) => a.value - b.value);
+                if (sorted.length > customMaxRating) {
+                    customMaxRating = sorted.length;
+                    customLabels = sorted.map((o: any) => o.label);
+                    customColors = sorted.map((o: any) => {
+                        const c = o.color;
+                        if (!c) return 'text-gray-500';
+                        // Map hex colors to Tailwind text classes
+                        if (c.includes('ef4444') || c.includes('dc2626')) return 'text-red-500';
+                        if (c.includes('f97316') || c.includes('ea580c')) return 'text-orange-500';
+                        if (c.includes('eab308') || c.includes('ca8a04')) return 'text-yellow-500';
+                        if (c.includes('22c55e') || c.includes('16a34a')) return 'text-green-500';
+                        if (c.includes('166534') || c.includes('15803d')) return 'text-emerald-700';
+                        return 'text-gray-500';
+                    });
+                }
+            }
+        }
+
+        // Determine maxRating: prefer customization, fall back to feedback data
+        let maxRating = customMaxRating;
+        if (maxRating === 0) {
+            filteredFeedback.forEach(fb => {
+                fb.responses?.forEach(r => {
+                    const val = Number(r.rating);
+                    if (val > maxRating) maxRating = val;
+                });
+            });
+        }
+        if (maxRating === 0) maxRating = 4; // fallback
+
+        // Build dynamic rating levels
+        const defaultLabelsMap: Record<number, string[]> = {
+            2: ['Poor', 'Good'],
+            3: ['Needs Improvement', 'Average', 'Good'],
+            4: ['Poor', 'Needs Improvement', 'Average', 'Good'],
+            5: ['Poor', 'Needs Improvement', 'Average', 'Good', 'Excellent']
+        };
+        const defaultColorsMap: Record<number, string[]> = {
+            2: ['text-red-500', 'text-green-500'],
+            3: ['text-orange-500', 'text-yellow-500', 'text-green-500'],
+            4: ['text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500'],
+            5: ['text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500', 'text-emerald-700']
+        };
+
+        // Use customization labels if available, otherwise defaults
+        let dynamicLabels: string[] = customLabels.length === maxRating ? customLabels : (defaultLabelsMap[maxRating] || defaultLabelsMap[4]);
+        let dynamicColors: string[] = customColors.length === maxRating ? customColors : (defaultColorsMap[maxRating] || defaultColorsMap[4]);
+
+        // Also check feedback rating_label to override labels
+        const labelsByLevel: Record<number, string> = {};
+        filteredFeedback.forEach(fb => {
+            fb.responses?.forEach((r: any) => {
+                if (r.rating_label && r.rating) {
+                    labelsByLevel[Number(r.rating)] = r.rating_label;
+                }
+            });
+        });
+        // If we found labels from feedback data, use them
+        if (Object.keys(labelsByLevel).length > 0) {
+            const levels = Object.keys(labelsByLevel).map(Number).sort((a, b) => a - b);
+            if (levels.length >= maxRating) {
+                dynamicLabels = levels.map(l => labelsByLevel[l]);
+            }
+        }
+
+        // Build the dynamic RATINGS array
+        const dynamicRatings = Array.from({ length: maxRating }, (_, i) => ({
+            level: i + 1,
+            label: dynamicLabels[i] || `Rating ${i + 1}`,
+            color: dynamicColors[i] || 'text-gray-500'
+        }));
+
+        const ratingCounts: Record<number, number> = {};
+        dynamicRatings.forEach(r => ratingCounts[r.level] = 0);
         let totalRatings = 0;
         let weightedSum = 0;
 
         filteredFeedback.forEach(fb => {
             fb.responses?.forEach(r => {
                 const val = Number(r.rating);
-                if (val >= 1 && val <= 4) {
-                    ratingCounts[val]++;
+                if (val >= 1 && val <= maxRating) {
+                    ratingCounts[val] = (ratingCounts[val] || 0) + 1;
                     totalRatings++;
                     weightedSum += val;
                 }
@@ -209,17 +310,16 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
         const averageRating = totalRatings > 0 ? (weightedSum / totalRatings).toFixed(2) : '0.00';
 
-        const highestLevel = Math.max(...RATINGS.map(r => r.level));
-        const positivePercentage = totalRatings > 0 ? ((ratingCounts[highestLevel] / totalRatings) * 100).toFixed(1) : '0';
+        const highestLevel = maxRating;
+        const positivePercentage = totalRatings > 0 ? (((ratingCounts[highestLevel] || 0) / totalRatings) * 100).toFixed(1) : '0';
+        const positiveLabel = dynamicLabels[maxRating - 1] || 'Good';
 
-        const pieData = RATINGS.map(r => ({
+        const pieData = dynamicRatings.map(r => ({
             name: r.label,
-            value: ratingCounts[r.level]
+            value: ratingCounts[r.level] || 0
         }));
 
         const qStats: Record<string, { ratings: Record<number, number>, total: number, emoji: string }> = {};
-        const qMap: Record<string, Question> = {};
-        questions.forEach(q => qMap[String(q.id)] = q);
 
         filteredFeedback.forEach(fb => {
             fb.responses?.forEach(r => {
@@ -227,9 +327,13 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 const qText = r.question_text || qMap[qId]?.question_text || `Question ${qId}`;
                 const emoji = qMap[qId]?.emoji || '😐';
 
-                if (!qStats[qText]) qStats[qText] = { ratings: { 1: 0, 2: 0, 3: 0, 4: 0 }, total: 0, emoji };
+                if (!qStats[qText]) {
+                    const initRatings: Record<number, number> = {};
+                    dynamicRatings.forEach(dr => initRatings[dr.level] = 0);
+                    qStats[qText] = { ratings: initRatings, total: 0, emoji };
+                }
                 const val = Number(r.rating);
-                if (val >= 1 && val <= 4) {
+                if (val >= 1 && val <= maxRating) {
                     qStats[qText].ratings[val]++;
                     qStats[qText].total++;
                 }
@@ -238,11 +342,11 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
         const tableData = Object.entries(qStats).map(([text, stats]) => {
             const total = Math.max(stats.total, 1);
-            const levelStats = RATINGS.map(r => ({
+            const levelStats = dynamicRatings.map(r => ({
                 label: r.label,
                 level: r.level,
-                count: stats.ratings[r.level],
-                pct: ((stats.ratings[r.level] / total) * 100).toFixed(1),
+                count: stats.ratings[r.level] || 0,
+                pct: (((stats.ratings[r.level] || 0) / total) * 100).toFixed(1),
                 color: r.color
             }));
 
@@ -250,7 +354,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 question: text,
                 emoji: stats.emoji,
                 levelStats,
-                average: (RATINGS.reduce((sum, r) => sum + (stats.ratings[r.level] * r.level), 0) / total).toFixed(2),
+                average: (dynamicRatings.reduce((sum, r) => sum + ((stats.ratings[r.level] || 0) * r.level), 0) / total).toFixed(2),
                 totalResponses: stats.total
             };
         }).sort((a, b) => a.question.localeCompare(b.question));
@@ -261,15 +365,28 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             value: parseFloat(d.average)
         })).filter(d => parseFloat(d.value.toString()) > 0);
 
+        // Find the most common rating name
+        let modalRatingName = dynamicRatings[0]?.label || 'N/A';
+        let modalMax = 0;
+        dynamicRatings.forEach(r => {
+            if ((ratingCounts[r.level] || 0) > modalMax) {
+                modalMax = ratingCounts[r.level] || 0;
+                modalRatingName = r.label;
+            }
+        });
+
         return {
             totalSubmissions: filteredFeedback.length,
             averageRating,
             positivePercentage,
+            positiveLabel,
             ratingCounts,
-            modalRatingName: RATINGS.reduce((prev, curr) => ratingCounts[prev.level] > ratingCounts[curr.level] ? prev : curr).label,
+            modalRatingName,
+            modalRatingPct: totalRatings > 0 ? ((modalMax / totalRatings) * 100).toFixed(1) : '0',
             pieData,
             tableData,
-            averageChartData
+            averageChartData,
+            dynamicRatings
         };
     }, [filteredFeedback, questions]);
 
@@ -327,7 +444,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
         let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
 
         // Header row: ID, Metadata, and then each unique question
-        const headers = ["ID", "Timestamp", "Canteen", "Username", "Meal Slot", "Overall Rating", ...uniqueQuestions];
+        const headers = ["ID", "Timestamp", "Canteen", "Name", "Employee ID", "Department", "Meal Slot", "Overall Rating", ...uniqueQuestions, "Suggestion"];
         csvContent += headers.map(h => `"${h}"`).join(',') + '\r\n';
 
         filteredFeedback.forEach(fb => {
@@ -340,18 +457,37 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 fb.id,
                 new Date(fb.timestamp).toLocaleString(),
                 fb.canteen || fb.canteen_id,
-                fb.username || '',
-                fb.meal_category || 'Other',
+                fb.user_name || fb.username || '',
+                fb.user_employee_id || '',
+                fb.user_department || '',
+                fb.selected_meal_slot || fb.meal_category || 'Other',
                 overallRating
             ];
 
-            // Add rating for each specific question column
+            // Add rating or answer for each specific question column
             uniqueQuestions.forEach(qText => {
                 const response = fb.responses.find(r =>
                     (r.question_text || questionsMap[String(r.question_id || r.questionId)] || 'Question') === qText
                 );
-                rowValues.push(response ? String(response.rating) : '');
+                if (!response) {
+                    rowValues.push('');
+                } else if (response.rating !== undefined && response.rating !== null && !isNaN(Number(response.rating))) {
+                    rowValues.push(String(response.rating));
+                } else {
+                    let ans = response.answer || '';
+                    if (typeof ans === 'string' && ans.startsWith('[') && ans.endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(ans);
+                            if (Array.isArray(parsed)) ans = parsed.join('; ');
+                        } catch {}
+                    }
+                    if (response.other_text) ans += ` (${response.other_text})`;
+                    rowValues.push(ans);
+                }
             });
+
+            // Add suggestion at the end
+            rowValues.push(fb.user_suggestion || '');
 
             // Escape each cell and join with comma
             const escapedRow = rowValues.map(v => `"${String(v).replace(/"/g, '""')}"`);
@@ -617,15 +753,14 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                 <StatCard
                                     title="Positive Feedback"
                                     value={`${analytics.positivePercentage}%`}
-                                    description="Ratings of 'Good'"
+                                    description={`Ratings of '${analytics.positiveLabel}'`}
                                     backgroundColor="linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
                                     textColor="#ffffff"
                                     iconColor="#ffffff"
                                 />
                                 <StatCard
-                                    title="Avg Branch Rating"
-                                    value={analytics.averageRating}
-                                    description={`Most common: ${analytics.modalRatingName}`}
+                                    title="Most Common Rating"
+                                    value={`${analytics.modalRatingName} (${analytics.modalRatingPct}%)`}
                                     backgroundColor="linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"
                                     textColor="#ffffff"
                                     iconColor="#ffffff"
@@ -679,7 +814,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                         <thead className="bg-gray-50">
                                             <tr>
                                                 <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">Question</th>
-                                                {RATINGS.map(r => (
+                                                {analytics.dynamicRatings.map(r => (
                                                     <th key={r.level} className={`px-3 py-4 text-center text-xs font-bold ${r.color}`}>
                                                         {r.label === 'Needs Improvement' ? 'Needs Imp' : (r.label === 'Average' ? 'Avg' : r.label)}
                                                     </th>
@@ -733,6 +868,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Date / Time</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Canteen</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">User</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Emp ID</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Meal</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Rating</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest print-only">Details</th>
@@ -749,7 +885,10 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                     {fb.canteen || fb.canteen_id}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-gray-500 italic">
-                                                    {fb.username || 'Anonymous'}
+                                                    {fb.user_name || fb.username || 'Anonymous'}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-500">
+                                                    {fb.user_employee_id || <span style={{ color: '#aaa' }}>-</span>}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-xs font-black uppercase">
@@ -896,7 +1035,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
                                         const qrPromises = canteens.map(c => {
                                             return new Promise<string>((resolve) => {
-                                                const qrUrl = `${window.location.origin}/#/feedback?site=${encodeURIComponent(site)}&canteen=${encodeURIComponent(c.name)}`;
+                                                const qrUrl = `${window.location.origin}/f/${toSlug(site)}/${toSlug(c.name)}`;
                                                 const img = new Image();
                                                 img.crossOrigin = 'anonymous';
                                                 img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qrUrl);
@@ -910,7 +1049,8 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                         ctx.fillRect(0, 0, 300, 300);
                                                         ctx.drawImage(img, 0, 0);
                                                     }
-                                                    resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white;"><img src="${canvas.toDataURL()}" style="width: 280px; height: 280px; border: 3px solid #333; padding: 10px; border-radius: 8px; background: white;"><div style="margin-top: 40px; font-weight: bold; font-size: 24px; color: #1f2937;">${c.name}</div><div style="font-size: 16px; color: #6b7280; margin-top: 12px; font-weight: 600;">${site}</div></div>`);
+                                                    const catalystLogoUrl = new URL(catalystLogo, window.location.origin).href;
+                                                    resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white; position: relative;"><div style="position: absolute; top: 30px; left: 40px; right: 40px; display: flex; justify-content: space-between; align-items: center;"><img src="${catalystLogoUrl}" style="height: 40px; object-fit: contain;">${branchLogo ? `<img src="${branchLogo}" style="height: 50px; object-fit: contain; max-width: 170px;">` : ''}</div><div style="font-weight: 900; font-size: 28px; color: #1a1a1a; margin-bottom: 20px;">We Value Your Feedback</div><img src="${canvas.toDataURL()}" style="width: 280px; height: 280px; border: 3px solid #333; padding: 10px; border-radius: 8px; background: white;"><div style="margin-top: 20px; color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">Scan to provide feedback</div><div style="margin-top: 12px; color: #999; font-size: 11px; font-weight: 500;">www.catalystsolutions.eco</div></div>`);
                                                 };
                                                 img.onerror = () => {
                                                     resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white;"><div style="font-size: 18px; color: #ef4444;">Failed to load QR for ${c.name}</div></div>`);
@@ -969,7 +1109,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {canteens.map(c => {
-                                    const qrUrl = `${window.location.origin}/#/feedback?site=${encodeURIComponent(site)}&canteen=${encodeURIComponent(c.name)}`;
+                                    const qrUrl = `${window.location.origin}/f/${toSlug(site)}/${toSlug(c.name)}`;
                                     return (
                                         <div key={c.name} className="p-8 bg-white rounded-3xl border border-gray-200 flex flex-col items-center text-center group hover:shadow-2xl transition-all relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-full h-1.5 bg-indigo-600"></div>
@@ -994,30 +1134,41 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                         document.body.appendChild(iframe);
                                                         const doc = iframe.contentWindow?.document;
                                                         if (doc) {
+                                                            const catalystLogoUrl = new URL(catalystLogo, window.location.origin).href;
                                                             doc.write(`
                                                         <html>
                                                             <head>
                                                                 <title>QR Code - ${c.name}</title>
                                                                 <style>
-                                                                    body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; }
-                                                                    .card { border: 4px solid #4f46e5; padding: 40px; border-radius: 40px; text-align: center; max-width: 400px; }
+                                                                    body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; position: relative; }
+                                                                    .logos { position: absolute; top: 30px; left: 40px; right: 40px; display: flex; justify-content: space-between; align-items: center; }
+                                                                    .logos img { height: 40px; object-fit: contain; }
+                                                                    .card { text-align: center; max-width: 500px; }
                                                                     .qr { margin: 20px 0; }
-                                                                    img { width: 300px; height: 300px; }
-                                                                    h1 { margin: 10px 0; font-size: 32px; color: #1f2937; font-weight: 900; }
-                                                                    p { color: #4f46e5; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
-                                                                    .site { color: #9ca3af; font-size: 12px; }
+                                                                    img.qr-img { width: 300px; height: 300px; }
+                                                                    h1 { margin: 10px 0 20px; font-size: 28px; color: #1a1a1a; font-weight: 900; }
+                                                                    .url-box { display: inline-block; padding: 12px 30px; border-radius: 12px; font-family: monospace; font-size: 12px; color: #000; font-weight: 700; background: #f8f9fa; border: 2px solid #eee; word-break: break-all; max-width: 90%; }
+                                                                    .scan-text { color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: 20px; }
+                                                                    .website { color: #999; font-size: 11px; margin-top: 12px; font-weight: 500; }
+                                                                    @media print { body { margin: 0; } }
                                                                 </style>
                                                             </head>
                                                             <body>
+                                                                <div class="logos">
+                                                                    <img src="${catalystLogoUrl}" alt="Catalyst">
+                                                                    ${branchLogo ? `<img src="${branchLogo}" alt="Branch Logo" style="max-width: 150px;">` : ''}
+                                                                </div>
                                                                 <div class="card">
+                                                                    <h1>We Value Your Feedback</h1>
                                                                     <div class="qr" id="qr-container"></div>
-                                                                    <h1>${c.name}</h1>
-                                                                    <p class="site">${site}</p>
+                                                                    <p class="scan-text">Scan to provide feedback</p>
+                                                                    <p class="website">www.catalystsolutions.eco</p>
                                                                 </div>
                                                                 <script>
                                                                     window.onload = function() {
                                                                         const container = document.getElementById('qr-container');
                                                                         const img = new Image();
+                                                                        img.className = 'qr-img';
                                                                         img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent("${qrUrl}");
                                                                         img.onload = function() {
                                                                             container.appendChild(img);
@@ -1104,49 +1255,115 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             {
                 detailsId && activeFeedback && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setDetailsId(null)}>
-                        <div className="bg-white w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
-                            <div className="bg-gradient-to-r from-indigo-600 to-primary-500 p-8 text-white relative">
-                                <button onClick={() => setDetailsId(null)} className="absolute top-6 right-6 text-white/80 hover:text-white transition-colors text-2xl">
+                        <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-scale-up max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="bg-gradient-to-r from-indigo-600 to-primary-500 px-5 py-4 text-white relative flex-shrink-0">
+                                <button onClick={() => setDetailsId(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors text-lg">
                                     <FaTimes />
                                 </button>
-                                <div className="flex items-center gap-4 mb-2">
-                                    <div className="bg-white/20 p-3 rounded-2xl text-2xl">📅</div>
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-white/20 p-2 rounded-xl text-lg">📅</div>
                                     <div>
-                                        <h4 className="font-black text-2xl tracking-tight">Feedback Details</h4>
-                                        <p className="text-white/70 text-sm font-bold">{new Date(activeFeedback.timestamp).toLocaleString()}</p>
+                                        <h4 className="font-black text-lg tracking-tight">Feedback Details</h4>
+                                        <p className="text-white/70 text-xs font-bold">{new Date(activeFeedback.timestamp).toLocaleString()}</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="p-8 space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-gray-50 rounded-2xl">
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Canteen</p>
-                                        <p className="font-black text-gray-800">{activeFeedback.canteen || activeFeedback.canteen_id}</p>
+                            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-3 bg-gray-50 rounded-xl">
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Canteen</p>
+                                        <p className="font-bold text-sm text-gray-800">{activeFeedback.canteen || activeFeedback.canteen_id}</p>
                                     </div>
-                                    <div className="p-4 bg-gray-50 rounded-2xl">
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Meal Slot</p>
-                                        <p className="font-black text-blue-600">{activeFeedback.meal_category || 'Other'}</p>
+                                    <div className="p-3 bg-gray-50 rounded-xl">
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Meal Slot</p>
+                                        <p className="font-bold text-sm text-blue-600">{activeFeedback.selected_meal_slot || activeFeedback.meal_category || 'Other'}</p>
                                     </div>
+                                    {activeFeedback.user_name && (
+                                        <div className="p-3 bg-gray-50 rounded-xl">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Name</p>
+                                            <p className="font-bold text-sm text-gray-800">{activeFeedback.user_name}</p>
+                                        </div>
+                                    )}
+                                    {activeFeedback.user_employee_id && (
+                                        <div className="p-3 bg-gray-50 rounded-xl">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Employee ID</p>
+                                            <p className="font-bold text-sm text-gray-800">{activeFeedback.user_employee_id}</p>
+                                        </div>
+                                    )}
+                                    {activeFeedback.user_department && (
+                                        <div className="p-3 bg-gray-50 rounded-xl">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Department</p>
+                                            <p className="font-bold text-sm text-gray-800">{activeFeedback.user_department}</p>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="space-y-4">
-                                    <p className="text-sm font-black text-gray-800 uppercase border-b border-gray-100 pb-2">Responses</p>
-                                    <div className="max-h-[300px] overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                                        {activeFeedback.responses.map((r, i) => (
-                                            <div key={i} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                                                <span className="text-sm font-bold text-gray-700 flex-1 pr-4">{r.question_text || `Question ${r.question_id}`}</span>
-                                                <div className="flex flex-col items-end">
-                                                    <span className={`text-xs font-black uppercase ${r.rating >= 3 ? 'text-green-500' : 'text-red-500'}`}>
-                                                        {RATING_LABELS[r.rating] || 'Rated'}
-                                                    </span>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs font-bold text-gray-400">Rating:</span>
-                                                        <span className={`text-lg font-black ${r.rating >= 3 ? 'text-green-600' : 'text-red-600'}`}>
+                                {activeFeedback.user_suggestion && (
+                                    <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-200">
+                                        <p className="text-[9px] font-black text-yellow-600 uppercase tracking-widest mb-0.5">💡 Suggestion</p>
+                                        <p className="text-sm text-gray-800 font-medium">{activeFeedback.user_suggestion}</p>
+                                    </div>
+                                )}
+                                {activeFeedback.custom_field_values && typeof activeFeedback.custom_field_values === 'object' && Object.keys(activeFeedback.custom_field_values).length > 0 && (
+                                    <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 mb-3">
+                                        <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">Custom Fields</p>
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            {Object.entries(activeFeedback.custom_field_values).map(([k, v]) => (
+                                                <div key={k}>
+                                                    <span className="font-bold text-gray-600 block">{k}:</span>
+                                                    <span className="text-gray-800">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    <p className="text-xs font-black text-gray-800 uppercase border-b border-gray-100 pb-1.5">Responses</p>
+                                    <div className="space-y-2">
+                                        {activeFeedback.responses.map((r, i) => {
+                                            const isNumericRating = typeof r.rating === 'number' && !isNaN(r.rating) && r.rating !== null;
+                                            if (!isNumericRating) {
+                                                let displayAns = r.answer || '';
+                                                if (typeof displayAns === 'string' && displayAns.startsWith('[') && displayAns.endsWith(']')) {
+                                                    try {
+                                                        const parsed = JSON.parse(displayAns);
+                                                        if (Array.isArray(parsed)) displayAns = parsed.join(', ');
+                                                    } catch {}
+                                                }
+                                                return (
+                                                    <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                                        <span className="text-xs font-bold text-gray-700 flex-1 pr-3">{r.question_text || `Question ${r.question_id}`}</span>
+                                                        <div className="flex flex-col items-end flex-shrink-0">
+                                                            <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-md">
+                                                                {displayAns || 'Answered'}
+                                                            </span>
+                                                            {r.other_text && (
+                                                                <span className="text-[10px] text-gray-500 italic mt-0.5">
+                                                                    ({r.other_text})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+
+                                            const label = r.rating_label || RATING_LABELS[r.rating] || 'Rated';
+                                            const isPositive = r.rating_label
+                                                ? ['good', 'excellent', 'great', 'very good'].some(w => (r.rating_label || '').toLowerCase().includes(w))
+                                                : r.rating >= 3;
+                                            return (
+                                                <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                                    <span className="text-xs font-bold text-gray-700 flex-1 pr-3">{r.question_text || `Question ${r.question_id}`}</span>
+                                                    <div className="flex flex-col items-end flex-shrink-0">
+                                                        <span className={`text-[10px] font-black uppercase ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                                                            {label}
+                                                        </span>
+                                                        <span className={`text-sm font-black ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
                                                             {r.rating}
                                                         </span>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </div>

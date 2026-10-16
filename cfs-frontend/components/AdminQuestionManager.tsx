@@ -1,7 +1,77 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { getEndpoints } from '../constants';
-import { FaSave, FaTimes } from 'react-icons/fa';
+import { FaSave, FaTimes, FaPlus, FaTrash, FaArrowUp, FaArrowDown, FaCog } from 'react-icons/fa';
 import { CustomQuestionRenderer } from './CustomQuestionRenderer';
+import { CustomFieldDefinition, CustomFieldType, QuestionResponseType } from '../types';
+
+// ============= SEARCHABLE DROPDOWN COMPONENT =============
+interface SearchableDropdownProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder: string;
+  disabled?: boolean;
+}
+
+const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ value, onChange, options, placeholder, disabled }) => {
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={open ? search : value || ''}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+        onFocus={() => { setOpen(true); setSearch(''); }}
+        onChange={e => { setSearch(e.target.value); setOpen(true); }}
+      />
+      {open && !disabled && (
+        <div className="absolute z-50 mt-1 w-full bg-white border-2 border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+          {filtered.length === 0 && (
+            <div className="px-4 py-3 text-sm text-gray-400">No results found</div>
+          )}
+          {filtered.map(o => (
+            <div
+              key={o}
+              className={`px-4 py-3 text-sm cursor-pointer hover:bg-primary-50 transition-colors ${o === value ? 'bg-primary-100 font-semibold text-primary-700' : 'text-gray-700'}`}
+              onMouseDown={() => { onChange(o); setSearch(''); setOpen(false); }}
+            >
+              {o}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============= RESPONSE TYPES =============
+const RESPONSE_TYPES: { id: QuestionResponseType; label: string; icon: string }[] = [
+  { id: 'smiley_faces', label: 'Smiley Faces', icon: '😊' },
+  { id: 'star_rating', label: 'Star Rating', icon: '⭐' },
+  { id: 'scale', label: 'Scale (1-10)', icon: '📊' },
+  { id: 'yes_no', label: 'Yes / No', icon: '✅' },
+  { id: 'short_answer', label: 'Short Text', icon: '📝' },
+  { id: 'long_answer', label: 'Long Text', icon: '📄' },
+  { id: 'dropdown_single', label: 'Dropdown', icon: '▾' },
+  { id: 'dropdown_multi', label: 'Multi Dropdown', icon: '📑' },
+  { id: 'choice_single', label: 'Single Choice', icon: '🔘' },
+  { id: 'choice_multi', label: 'Checkboxes', icon: '☑️' }
+];
 
 // ============= TYPES =============
 interface CustomizationOption {
@@ -40,7 +110,37 @@ interface YesNoCustomization {
   visualStyle: 'buttons' | 'toggle' | 'radio';
 }
 
-type Customization = ScaleCustomization | StarRatingCustomization | SmileyFaceCustomization | YesNoCustomization;
+interface TextCustomization {
+  type: 'short_answer' | 'long_answer';
+  placeholder?: string;
+  maxLength?: number;
+  rows?: number;
+  required?: boolean;
+}
+
+interface DropdownCustomization {
+  type: 'dropdown_single' | 'dropdown_multi';
+  placeholder?: string;
+  options: string[];
+  required?: boolean;
+}
+
+interface ChoiceCustomization {
+  type: 'choice_single' | 'choice_multi';
+  options: string[];
+  allowOther?: boolean;
+  required?: boolean;
+}
+
+type Customization =
+  | ScaleCustomization
+  | StarRatingCustomization
+  | SmileyFaceCustomization
+  | YesNoCustomization
+  | TextCustomization
+  | DropdownCustomization
+  | ChoiceCustomization
+  | any;
 
 interface Canteen {
   id: number;
@@ -61,10 +161,25 @@ interface Question {
 
 const EMOJI_PRESETS = ['😞', '😐', '🙂', '😊', '😍', '👎', '👍', '⭐', '🌟', '❤️', '🔥', '💯', '✨', '🎉', '🙌'];
 
-// Emoji Preset Sets for Smiley Faces
+// Emoji Preset Sets for Smiley Faces - organized by response count
 const EMOJI_PRESET_SETS = {
-  preset1: {
-    name: 'Classic Smileys',
+  responses2: {
+    name: '2 Responses',
+    options: [
+      { value: 1, label: 'Poor', emoji: '😞', color: '#ef4444' },
+      { value: 2, label: 'Good', emoji: '😀', color: '#22c55e' }
+    ]
+  },
+  responses3: {
+    name: '3 Responses',
+    options: [
+      { value: 1, label: 'Needs Improvement', emoji: '😐', color: '#f97316' },
+      { value: 2, label: 'Average', emoji: '🙂', color: '#eab308' },
+      { value: 3, label: 'Good', emoji: '😀', color: '#22c55e' }
+    ]
+  },
+  responses4: {
+    name: '4 Responses',
     options: [
       { value: 1, label: 'Poor', emoji: '😞', color: '#ef4444' },
       { value: 2, label: 'Needs Improvement', emoji: '😐', color: '#f97316' },
@@ -72,44 +187,14 @@ const EMOJI_PRESET_SETS = {
       { value: 4, label: 'Good', emoji: '😀', color: '#22c55e' }
     ]
   },
-  preset2: {
-    name: 'Expressive Faces',
+  responses5: {
+    name: '5 Responses',
     options: [
-      { value: 1, label: 'Very Unhappy', emoji: '😢', color: '#dc2626' },
-      { value: 2, label: 'Unhappy', emoji: '😞', color: '#f97316' },
-      { value: 3, label: 'Neutral', emoji: '😐', color: '#eab308' },
-      { value: 4, label: 'Happy', emoji: '😄', color: '#65a30d' },
-      { value: 5, label: 'Very Happy', emoji: '😄', color: '#22c55e' }
-    ]
-  },
-  preset3: {
-    name: 'Thumbs & Hearts',
-    options: [
-      { value: 1, label: 'Disappointed', emoji: '👎', color: '#ef4444' },
-      { value: 2, label: 'Dislike', emoji: '😕', color: '#f97316' },
-      { value: 3, label: 'Neutral', emoji: '😐', color: '#eab308' },
-      { value: 4, label: 'Like', emoji: '😊', color: '#22c55e' },
-      { value: 5, label: 'Love', emoji: '❤️', color: '#ec4899' }
-    ]
-  },
-  preset4: {
-    name: 'Star Ratings',
-    options: [
-      { value: 1, label: 'Terrible', emoji: '⭐', color: '#7f1d1d' },
-      { value: 2, label: 'Poor', emoji: '⭐⭐', color: '#dc2626' },
-      { value: 3, label: 'Average', emoji: '⭐⭐⭐', color: '#eab308' },
-      { value: 4, label: 'Good', emoji: '⭐⭐⭐⭐', color: '#22c55e' },
-      { value: 5, label: 'Excellent', emoji: '⭐⭐⭐⭐⭐', color: '#166534' }
-    ]
-  },
-  preset5: {
-    name: 'Energy Levels',
-    options: [
-      { value: 1, label: 'Drained', emoji: '😫', color: '#ef4444' },
-      { value: 2, label: 'Tired', emoji: '😪', color: '#f97316' },
-      { value: 3, label: 'Okay', emoji: '🙂', color: '#eab308' },
-      { value: 4, label: 'Energetic', emoji: '😊', color: '#22c55e' },
-      { value: 5, label: 'Pumped', emoji: '🔥', color: '#15803d' }
+      { value: 1, label: 'Poor', emoji: '😞', color: '#ef4444' },
+      { value: 2, label: 'Needs Improvement', emoji: '😐', color: '#f97316' },
+      { value: 3, label: 'Average', emoji: '🙂', color: '#eab308' },
+      { value: 4, label: 'Good', emoji: '😀', color: '#22c55e' },
+      { value: 5, label: 'Excellent', emoji: '😍', color: '#166534' }
     ]
   }
 };
@@ -125,6 +210,9 @@ const CustomizationEditor: React.FC<CustomizationEditorProps> = ({ customization
     const sfc = customization as SmileyFaceCustomization;
     const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null);
 
+    const reindexOptions = (opts: CustomizationOption[]) => 
+      opts.map((opt, i) => ({ ...opt, value: i + 1 }));
+
     const handleAddEmoji = () => {
       const newOption: CustomizationOption = {
         value: sfc.options.length + 1,
@@ -132,13 +220,13 @@ const CustomizationEditor: React.FC<CustomizationEditorProps> = ({ customization
         emoji: '😊',
         color: '#22c55e'
       };
-      onUpdate({ ...customization, options: [...sfc.options, newOption] });
+      onUpdate({ ...customization, options: reindexOptions([...sfc.options, newOption]) });
     };
 
     const handleRemoveEmoji = (index: number) => {
       if (sfc.options.length > 2) {
         const newOpts = sfc.options.filter((_, i) => i !== index);
-        onUpdate({ ...customization, options: newOpts });
+        onUpdate({ ...customization, options: reindexOptions(newOpts) });
       }
     };
 
@@ -171,14 +259,14 @@ const CustomizationEditor: React.FC<CustomizationEditorProps> = ({ customization
         {/* Preset Selector */}
         <div className="p-3 bg-blue-50 rounded border border-blue-300">
           <label className="text-sm font-semibold text-gray-700 block mb-2">📦 Quick Presets:</label>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {Object.entries(EMOJI_PRESET_SETS).map(([key, preset]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => handleApplyPreset(key)}
                 className="p-2 bg-white border-2 border-blue-300 rounded text-xs font-medium text-gray-700 hover:bg-blue-100 hover:border-blue-500 transition text-center"
-                title={preset.name}
+                title={`${preset.options.length} response options`}
               >
                 {preset.name}
               </button>
@@ -332,7 +420,320 @@ const CustomizationEditor: React.FC<CustomizationEditorProps> = ({ customization
     );
   }
 
+  if (customization.type === 'short_answer' || customization.type === 'long_answer') {
+    const isLong = customization.type === 'long_answer';
+    return (
+      <div className="p-4 bg-gray-100 rounded-xl border border-gray-300 space-y-4">
+        <h5 className="font-semibold text-gray-800 text-sm uppercase tracking-wider">
+          {isLong ? '📝 Long Answer Settings' : '✏️ Short Answer Settings'}
+        </h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Placeholder Text</label>
+            <input
+              type="text"
+              value={customization.placeholder || ''}
+              onChange={e => onUpdate({ ...customization, placeholder: e.target.value })}
+              placeholder={isLong ? 'Enter your detailed feedback...' : 'Type your answer here...'}
+              className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Max Character Limit</label>
+            <input
+              type="number"
+              min={10}
+              max={2000}
+              value={customization.maxLength || (isLong ? 1000 : 255)}
+              onChange={e => onUpdate({ ...customization, maxLength: parseInt(e.target.value) || 255 })}
+              className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          {isLong && (
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Textarea Rows</label>
+              <input
+                type="number"
+                min={2}
+                max={10}
+                value={customization.rows || 4}
+                onChange={e => onUpdate({ ...customization, rows: parseInt(e.target.value) || 4 })}
+                className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-2 pt-4">
+            <input
+              type="checkbox"
+              id="field-required"
+              checked={!!customization.required}
+              onChange={e => onUpdate({ ...customization, required: e.target.checked })}
+              className="w-4 h-4 rounded text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="field-required" className="text-sm font-semibold text-gray-700 cursor-pointer">
+              Mark as Required Question
+            </label>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (customization.type === 'dropdown_single' || customization.type === 'dropdown_multi') {
+    const isMulti = customization.type === 'dropdown_multi';
+    const options: string[] = customization.options || [];
+
+    const handleAddOption = (optText: string) => {
+      const trimmed = optText.trim();
+      if (!trimmed || options.includes(trimmed)) return;
+      onUpdate({ ...customization, options: [...options, trimmed] });
+    };
+
+    const handleRemoveOption = (index: number) => {
+      if (options.length <= 1) return;
+      onUpdate({ ...customization, options: options.filter((_, i) => i !== index) });
+    };
+
+    const handleMoveOption = (index: number, dir: 'up' | 'down') => {
+      const targetIndex = dir === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= options.length) return;
+      const next = [...options];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      onUpdate({ ...customization, options: next });
+    };
+
+    const handleEditOption = (index: number, val: string) => {
+      const next = [...options];
+      next[index] = val;
+      onUpdate({ ...customization, options: next });
+    };
+
+    return (
+      <OptionsBuilderEditor
+        title={isMulti ? '📑 Multi-Select Dropdown Options' : '🔽 Single-Select Dropdown Options'}
+        hasPlaceholder={true}
+        placeholderValue={customization.placeholder || ''}
+        onPlaceholderChange={(val: string) => onUpdate({ ...customization, placeholder: val })}
+        options={options}
+        onAddOption={handleAddOption}
+        onRemoveOption={handleRemoveOption}
+        onMoveOption={handleMoveOption}
+        onEditOption={handleEditOption}
+        required={!!customization.required}
+        onRequiredChange={(req: boolean) => onUpdate({ ...customization, required: req })}
+      />
+    );
+  }
+
+  if (customization.type === 'choice_single' || customization.type === 'choice_multi') {
+    const isMulti = customization.type === 'choice_multi';
+    const options: string[] = customization.options || [];
+
+    const handleAddOption = (optText: string) => {
+      const trimmed = optText.trim();
+      if (!trimmed || options.includes(trimmed)) return;
+      onUpdate({ ...customization, options: [...options, trimmed] });
+    };
+
+    const handleRemoveOption = (index: number) => {
+      if (options.length <= 1) return;
+      onUpdate({ ...customization, options: options.filter((_, i) => i !== index) });
+    };
+
+    const handleMoveOption = (index: number, dir: 'up' | 'down') => {
+      const targetIndex = dir === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= options.length) return;
+      const next = [...options];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      onUpdate({ ...customization, options: next });
+    };
+
+    const handleEditOption = (index: number, val: string) => {
+      const next = [...options];
+      next[index] = val;
+      onUpdate({ ...customization, options: next });
+    };
+
+    return (
+      <OptionsBuilderEditor
+        title={isMulti ? '☑️ Choice Multi (Checkboxes) Options' : '🔘 Choice Single (Radio Buttons) Options'}
+        hasAllowOther={true}
+        allowOther={!!customization.allowOther}
+        onAllowOtherChange={(allow: boolean) => onUpdate({ ...customization, allowOther: allow })}
+        options={options}
+        onAddOption={handleAddOption}
+        onRemoveOption={handleRemoveOption}
+        onMoveOption={handleMoveOption}
+        onEditOption={handleEditOption}
+        required={!!customization.required}
+        onRequiredChange={(req: boolean) => onUpdate({ ...customization, required: req })}
+      />
+    );
+  }
+
   return null;
+};
+
+// Reusable Options Builder for Dropdown and Choice question customizations
+interface OptionsBuilderEditorProps {
+  title: string;
+  hasPlaceholder?: boolean;
+  placeholderValue?: string;
+  onPlaceholderChange?: (val: string) => void;
+  hasAllowOther?: boolean;
+  allowOther?: boolean;
+  onAllowOtherChange?: (val: boolean) => void;
+  options: string[];
+  onAddOption: (opt: string) => void;
+  onRemoveOption: (index: number) => void;
+  onMoveOption: (index: number, dir: 'up' | 'down') => void;
+  onEditOption: (index: number, val: string) => void;
+  required: boolean;
+  onRequiredChange: (val: boolean) => void;
+}
+
+const OptionsBuilderEditor: React.FC<OptionsBuilderEditorProps> = ({
+  title,
+  hasPlaceholder,
+  placeholderValue,
+  onPlaceholderChange,
+  hasAllowOther,
+  allowOther,
+  onAllowOtherChange,
+  options,
+  onAddOption,
+  onRemoveOption,
+  onMoveOption,
+  onEditOption,
+  required,
+  onRequiredChange
+}) => {
+  const [newOptText, setNewOptText] = useState('');
+
+  const submitAdd = () => {
+    if (newOptText.trim()) {
+      onAddOption(newOptText.trim());
+      setNewOptText('');
+    }
+  };
+
+  return (
+    <div className="p-4 bg-gray-100 rounded-xl border border-gray-300 space-y-4">
+      <h5 className="font-semibold text-gray-800 text-sm uppercase tracking-wider">{title}</h5>
+
+      {hasPlaceholder && onPlaceholderChange && (
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Dropdown Placeholder / Hint</label>
+          <input
+            type="text"
+            value={placeholderValue || ''}
+            onChange={e => onPlaceholderChange(e.target.value)}
+            placeholder="Select an option..."
+            className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-sm"
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-gray-600 block">Options List</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newOptText}
+            onChange={e => setNewOptText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitAdd();
+              }
+            }}
+            placeholder="Type option name and press Add..."
+            className="flex-1 p-2.5 bg-white border border-gray-300 rounded-lg text-sm"
+          />
+          <button
+            type="button"
+            onClick={submitAdd}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-700 transition"
+          >
+            + Add
+          </button>
+        </div>
+
+        <div className="space-y-2 max-h-56 overflow-y-auto mt-2 pr-1">
+          {options.map((opt, i) => (
+            <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200">
+              <span className="text-xs font-bold text-gray-400 w-5 text-center">{i + 1}</span>
+              <input
+                type="text"
+                value={opt}
+                onChange={e => onEditOption(i, e.target.value)}
+                className="flex-1 p-1 text-sm border-b border-gray-200 focus:border-primary-500 outline-none"
+              />
+              <button
+                type="button"
+                disabled={i === 0}
+                onClick={() => onMoveOption(i, 'up')}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-800 disabled:opacity-30"
+                title="Move Up"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                disabled={i === options.length - 1}
+                onClick={() => onMoveOption(i, 'down')}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-800 disabled:opacity-30"
+                title="Move Down"
+              >
+                ▼
+              </button>
+              {options.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveOption(i)}
+                  className="px-2 py-1 text-xs text-red-500 hover:text-red-700 font-bold"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="pt-2 space-y-2 border-t border-gray-200">
+        {hasAllowOther && onAllowOtherChange && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!allowOther}
+              onChange={e => onAllowOtherChange(e.target.checked)}
+              className="w-4 h-4 rounded text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm font-semibold text-gray-700">
+              Allow "Other (please specify)" option with free-text box
+            </span>
+          </label>
+        )}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!required}
+            onChange={e => onRequiredChange(e.target.checked)}
+            className="w-4 h-4 rounded text-primary-600 focus:ring-primary-500"
+          />
+          <span className="text-sm font-semibold text-gray-700">
+            Mark as Required Question
+          </span>
+        </label>
+      </div>
+    </div>
+  );
 };
 
 // ============= MAIN COMPONENT =============
@@ -375,6 +776,156 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
   const [importCanteenId, setImportCanteenId] = useState<number | ''>(''); // Stores canteen ID for import
   const [userRole, setUserRole] = useState<string>('');
   const [branchAdminSite, setBranchAdminSite] = useState<string>('');
+
+  // Form Settings State
+  const [formSettings, setFormSettings] = useState<{
+    enable_fullscreen: number;
+    collect_user_info: number;
+    field_name: number;
+    field_department: number;
+    field_suggestion: number;
+    field_meal_slot: number;
+    field_employee_id: number;
+    custom_fields?: CustomFieldDefinition[];
+  }>({
+    enable_fullscreen: 0,
+    collect_user_info: 0,
+    field_name: 0,
+    field_department: 0,
+    field_suggestion: 0,
+    field_meal_slot: 0,
+    field_employee_id: 0,
+    custom_fields: []
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Get selected canteen ID
+  const selectedCanteenObj = canteens.find(c => c.name === selectedCanteen);
+  const selectedCanteenId = selectedCanteenObj?.id;
+
+  // Fetch form settings when canteen changes
+  useEffect(() => {
+    if (!selectedCanteenId) {
+      setFormSettings({
+        enable_fullscreen: 0,
+        collect_user_info: 0,
+        field_name: 0,
+        field_department: 0,
+        field_suggestion: 0,
+        field_meal_slot: 0,
+        field_employee_id: 0,
+        custom_fields: []
+      });
+      return;
+    }
+    fetch(`${endpoints.FORM_SETTINGS}?canteen_id=${selectedCanteenId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings) {
+          setFormSettings({
+            ...data.settings,
+            custom_fields: Array.isArray(data.settings.custom_fields) ? data.settings.custom_fields : []
+          });
+        }
+      })
+      .catch(() => {});
+  }, [selectedCanteenId]);
+
+  // Save form settings
+  const saveFormSettings = async (updatedSettings: typeof formSettings) => {
+    if (!selectedCanteenId) return;
+    setSavingSettings(true);
+    try {
+      const token = localStorage.getItem('canteenAdminJWT');
+      await fetch(endpoints.FORM_SETTINGS, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canteen_id: selectedCanteenId, ...updatedSettings })
+      });
+      showNotification('Form settings saved! ✅');
+    } catch {
+      setError('Failed to save form settings');
+    }
+    setSavingSettings(false);
+  };
+
+  const handleSettingToggle = (field: 'enable_fullscreen' | 'collect_user_info' | 'field_name' | 'field_department' | 'field_suggestion' | 'field_meal_slot' | 'field_employee_id') => {
+    const updated = { ...formSettings, [field]: formSettings[field] ? 0 : 1 };
+    // If disabling collect_user_info, also disable all standard sub-fields
+    if (field === 'collect_user_info' && updated.collect_user_info === 0) {
+      updated.field_name = 0;
+      updated.field_department = 0;
+      updated.field_suggestion = 0;
+      updated.field_meal_slot = 0;
+      updated.field_employee_id = 0;
+    }
+    setFormSettings(updated);
+  };
+
+  // Custom Fields Handlers
+  const handleAddCustomField = () => {
+    const currentFields = formSettings.custom_fields || [];
+    const newField: CustomFieldDefinition = {
+      id: 'cf_' + Date.now(),
+      label: '',
+      type: 'text',
+      placeholder: '',
+      required: false,
+      enabled: true,
+      order: currentFields.length
+    };
+    setFormSettings({ ...formSettings, custom_fields: [...currentFields, newField] });
+  };
+
+  const handleUpdateCustomField = (id: string, updates: Partial<CustomFieldDefinition>) => {
+    const currentFields = formSettings.custom_fields || [];
+    const nextFields = currentFields.map(f => f.id === id ? { ...f, ...updates } : f);
+    setFormSettings({ ...formSettings, custom_fields: nextFields });
+  };
+
+  const handleRemoveCustomField = (id: string) => {
+    const currentFields = formSettings.custom_fields || [];
+    setFormSettings({ ...formSettings, custom_fields: currentFields.filter(f => f.id !== id) });
+  };
+
+  const handleMoveCustomField = (index: number, dir: 'up' | 'down') => {
+    const currentFields = [...(formSettings.custom_fields || [])];
+    const targetIndex = dir === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentFields.length) return;
+    const temp = currentFields[index];
+    currentFields[index] = currentFields[targetIndex];
+    currentFields[targetIndex] = temp;
+    currentFields.forEach((f, i) => (f.order = i));
+    setFormSettings({ ...formSettings, custom_fields: currentFields });
+  };
+
+  const handleAddCustomFieldOption = (fieldId: string, optText: string) => {
+    const trimmed = optText.trim();
+    if (!trimmed) return;
+    const currentFields = formSettings.custom_fields || [];
+    const nextFields = currentFields.map(f => {
+      if (f.id === fieldId) {
+        const opts = f.options || [];
+        if (!opts.includes(trimmed)) {
+          return { ...f, options: [...opts, trimmed] };
+        }
+      }
+      return f;
+    });
+    setFormSettings({ ...formSettings, custom_fields: nextFields });
+  };
+
+  const handleRemoveCustomFieldOption = (fieldId: string, optIndex: number) => {
+    const currentFields = formSettings.custom_fields || [];
+    const nextFields = currentFields.map(f => {
+      if (f.id === fieldId) {
+        const opts = (f.options || []).filter((_, i) => i !== optIndex);
+        return { ...f, options: opts };
+      }
+      return f;
+    });
+    setFormSettings({ ...formSettings, custom_fields: nextFields });
+  };
 
   // Get user role from JWT
   useEffect(() => {
@@ -551,6 +1102,49 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
           noColor: '#ef4444',
           visualStyle: 'buttons'
         } as YesNoCustomization;
+      case 'short_answer':
+        return {
+          type: 'short_answer',
+          placeholder: 'Type your answer here...',
+          maxLength: 255,
+          required: false
+        } as TextCustomization;
+      case 'long_answer':
+        return {
+          type: 'long_answer',
+          placeholder: 'Write your detailed feedback here...',
+          maxLength: 1000,
+          rows: 4,
+          required: false
+        } as TextCustomization;
+      case 'dropdown_single':
+        return {
+          type: 'dropdown_single',
+          placeholder: 'Select an option...',
+          options: ['Option 1', 'Option 2', 'Option 3'],
+          required: false
+        } as DropdownCustomization;
+      case 'dropdown_multi':
+        return {
+          type: 'dropdown_multi',
+          placeholder: 'Select options...',
+          options: ['Option 1', 'Option 2', 'Option 3'],
+          required: false
+        } as DropdownCustomization;
+      case 'choice_single':
+        return {
+          type: 'choice_single',
+          options: ['Option 1', 'Option 2', 'Option 3'],
+          allowOther: true,
+          required: false
+        } as ChoiceCustomization;
+      case 'choice_multi':
+        return {
+          type: 'choice_multi',
+          options: ['Option 1', 'Option 2', 'Option 3'],
+          allowOther: true,
+          required: false
+        } as ChoiceCustomization;
       default:
         return {} as any;
     }
@@ -854,25 +1448,290 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">📍 Select Site (Required)</label>
-            <select
+            <SearchableDropdown
               value={selectedSite}
-              onChange={e => setSelectedSite(e.target.value)}
+              onChange={val => setSelectedSite(val)}
+              options={sites}
+              placeholder="-- Search & Select Site --"
               disabled={userRole === 'branch_admin'}
-              className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              <option value="">-- Select Site --</option>
-              {sites.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">🏪 Select Canteen</label>
-            <select value={selectedCanteen} onChange={e => setSelectedCanteen(e.target.value)} disabled={!selectedSite} className="w-full p-3 border-2 border-gray-300 rounded-lg disabled:bg-gray-100 disabled:cursor-not-allowed">
-              <option value="">-- Select Canteen --</option>
-              {canteens.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <SearchableDropdown
+              value={selectedCanteen}
+              onChange={val => setSelectedCanteen(val)}
+              options={canteens.map(c => c.name)}
+              placeholder="-- Search & Select Canteen --"
+              disabled={!selectedSite}
+            />
           </div>
         </div>
       </div>
+
+      {/* Form Settings — shown when a canteen is selected */}
+      {selectedSite && selectedCanteen && selectedCanteenId && (
+        <div className="mb-8 p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg border-2 border-amber-200">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center gap-2">⚙️ Feedback Form Settings <span className="text-sm font-normal text-gray-500">for {selectedCanteen}</span></h3>
+
+          <div className="space-y-4">
+            {/* Full Screen Mode */}
+            <label className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:border-amber-400 transition-all">
+              <input
+                type="checkbox"
+                checked={!!formSettings.enable_fullscreen}
+                onChange={() => handleSettingToggle('enable_fullscreen')}
+                className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500"
+              />
+              <div>
+                <span className="font-semibold text-gray-800">🖥️ Enable Full Screen Mode</span>
+                <p className="text-xs text-gray-500">Feedback form will auto-enter fullscreen when opened for this canteen</p>
+              </div>
+            </label>
+
+            {/* Collect User Info */}
+            <label className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:border-amber-400 transition-all">
+              <input
+                type="checkbox"
+                checked={!!formSettings.collect_user_info}
+                onChange={() => handleSettingToggle('collect_user_info')}
+                className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500"
+              />
+              <div>
+                <span className="font-semibold text-gray-800">📋 Collect User Feedback Info</span>
+                <p className="text-xs text-gray-500">Show additional fields on the feedback form to collect user details</p>
+              </div>
+            </label>
+
+            {/* Sub-fields — only shown when collect_user_info is enabled */}
+            {!!formSettings.collect_user_info && (
+              <div className="ml-8 pl-4 border-l-4 border-amber-300 space-y-3">
+                <label className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-amber-300 transition-all">
+                  <input type="checkbox" checked={!!formSettings.field_name} onChange={() => handleSettingToggle('field_name')} className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">👤 Name Field</span>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-amber-300 transition-all">
+                  <input type="checkbox" checked={!!formSettings.field_employee_id} onChange={() => handleSettingToggle('field_employee_id')} className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">🪪 Employee ID Field</span>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-amber-300 transition-all">
+                  <input type="checkbox" checked={!!formSettings.field_department} onChange={() => handleSettingToggle('field_department')} className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">🏢 Department Field</span>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-amber-300 transition-all">
+                  <input type="checkbox" checked={!!formSettings.field_suggestion} onChange={() => handleSettingToggle('field_suggestion')} className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">💬 Description / Suggestion Box</span>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-amber-300 transition-all">
+                  <input type="checkbox" checked={!!formSettings.field_meal_slot} onChange={() => handleSettingToggle('field_meal_slot')} className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-700">🍽️ Meal Slot Dropdown</span>
+                </label>
+
+                {/* Dynamic Custom Fields Section */}
+                <div className="pt-4 mt-4 border-t border-amber-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wider block">Custom User Info Fields</span>
+                      <p className="text-xs text-gray-500">Add canteen-specific inputs (e.g. Contractor Company, Floor Number, Seat No)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddCustomField}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      <FaPlus size={11} /> Add Custom Field
+                    </button>
+                  </div>
+
+                  {(!formSettings.custom_fields || formSettings.custom_fields.length === 0) ? (
+                    <div className="p-4 bg-white/70 rounded-lg border border-dashed border-amber-300 text-center text-xs text-gray-500">
+                      No custom fields added yet for this canteen. Click <strong>+ Add Custom Field</strong> above to define one.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {formSettings.custom_fields.map((cf, idx) => (
+                        <div key={cf.id} className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-sm space-y-3">
+                          <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <span className="text-xs font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded">#{idx + 1}</span>
+                              <input
+                                type="text"
+                                value={cf.label}
+                                onChange={e => handleUpdateCustomField(cf.id, { label: e.target.value })}
+                                placeholder="Field Label (e.g. Company, Seat No)"
+                                className="text-sm font-bold text-gray-800 border border-gray-300 rounded px-2.5 py-1 focus:ring-1 focus:ring-amber-500 focus:border-amber-500 flex-1 max-w-xs"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleMoveCustomField(idx, 'up')}
+                                className="p-1.5 text-gray-500 hover:text-amber-700 disabled:opacity-25 rounded hover:bg-amber-50 transition-colors"
+                                title="Move Up"
+                              >
+                                <FaArrowUp size={11} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === formSettings.custom_fields!.length - 1}
+                                onClick={() => handleMoveCustomField(idx, 'down')}
+                                className="p-1.5 text-gray-500 hover:text-amber-700 disabled:opacity-25 rounded hover:bg-amber-50 transition-colors"
+                                title="Move Down"
+                              >
+                                <FaArrowDown size={11} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCustomField(cf.id)}
+                                className="p-1.5 text-red-500 hover:text-red-700 rounded hover:bg-red-50 transition-colors ml-1"
+                                title="Delete Custom Field"
+                              >
+                                <FaTrash size={11} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-gray-500 uppercase mr-1">Type:</span>
+                              {[
+                                { type: 'text', label: 'Text' },
+                                { type: 'dropdown_single', label: 'Dropdown (Single)' },
+                                { type: 'dropdown_multi', label: 'Dropdown (Multi)' }
+                              ].map(t => (
+                                <button
+                                  key={t.type}
+                                  type="button"
+                                  onClick={() => handleUpdateCustomField(cf.id, {
+                                    type: t.type as any,
+                                    options: t.type !== 'text' && (!cf.options || cf.options.length === 0) ? ['Option 1', 'Option 2'] : cf.options
+                                  })}
+                                  className={`px-2.5 py-1 text-xs rounded font-medium border transition-all ${
+                                    cf.type === t.type
+                                      ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {t.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!cf.required}
+                                  onChange={e => handleUpdateCustomField(cf.id, { required: e.target.checked })}
+                                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                                />
+                                <span className="text-xs font-semibold text-gray-700">Required</span>
+                              </label>
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={cf.enabled !== false}
+                                  onChange={e => handleUpdateCustomField(cf.id, { enabled: e.target.checked })}
+                                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                                />
+                                <span className="text-xs font-semibold text-gray-700">Active</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {cf.type === 'text' ? (
+                            <div>
+                              <input
+                                type="text"
+                                value={cf.placeholder || ''}
+                                onChange={e => handleUpdateCustomField(cf.id, { placeholder: e.target.value })}
+                                placeholder="Placeholder text (e.g. Enter company name...)"
+                                className="w-full text-xs border border-gray-300 rounded px-2.5 py-1.5 focus:ring-1 focus:ring-amber-500 bg-gray-50/50"
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200/80 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Dropdown Options</span>
+                                <span className="text-[10px] text-gray-400">{(cf.options || []).length} options</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(cf.options || []).map((opt, optIdx) => (
+                                  <span key={optIdx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-amber-300 text-amber-900 text-xs font-semibold rounded-full shadow-xs">
+                                    <span>{opt}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveCustomFieldOption(cf.id, optIdx)}
+                                      className="text-amber-500 hover:text-red-600 transition-colors ml-0.5"
+                                      title="Remove option"
+                                    >
+                                      <FaTimes size={10} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <input
+                                  type="text"
+                                  id={`new-opt-${cf.id}`}
+                                  placeholder="Type option name (e.g. Floor 1)..."
+                                  className="flex-1 text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-amber-500 bg-white"
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      const input = e.currentTarget;
+                                      handleAddCustomFieldOption(cf.id, input.value);
+                                      input.value = '';
+                                    }
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const input = document.getElementById(`new-opt-${cf.id}`) as HTMLInputElement;
+                                    if (input && input.value.trim()) {
+                                      handleAddCustomFieldOption(cf.id, input.value);
+                                      input.value = '';
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1"
+                                >
+                                  <FaPlus size={10} /> Add
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {savingSettings && <p className="text-xs text-amber-600 mt-2 animate-pulse">Saving settings...</p>}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => saveFormSettings(formSettings)}
+              disabled={savingSettings}
+              className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-lg shadow-amber-200 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+            >
+              {savingSettings ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white/20 border-t-white rounded-full"></div>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <FaSave /> Save Settings
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add New Question */}
       {selectedSite && (
@@ -886,18 +1745,20 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">Response Type</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { id: 'smiley_faces', label: 'Smiley Faces', icon: '😊' },
-                  { id: 'star_rating', label: 'Star Rating', icon: '⭐' },
-                  { id: 'scale', label: 'Scale', icon: '📊' },
-                  { id: 'yes_no', label: 'Yes/No', icon: '✅' }
-                ].map(type => (
-                  <button key={type.id} type="button" onClick={() => handleResponseTypeChange(type.id)}
-                    className={`p-4 rounded-lg font-semibold transition-all border-2 flex flex-col items-center gap-2 ${form.response_type === type.id ? 'bg-primary-600 text-white border-primary-700 shadow-lg' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
-                      }`}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                {RESPONSE_TYPES.map(type => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => handleResponseTypeChange(type.id)}
+                    className={`p-3 rounded-xl font-semibold transition-all border-2 flex flex-col items-center gap-1.5 ${
+                      form.response_type === type.id
+                        ? 'bg-primary-600 text-white border-primary-700 shadow-md ring-2 ring-primary-300'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-primary-400 hover:bg-gray-50'
+                    }`}
+                  >
                     <span className="text-2xl">{type.icon}</span>
-                    <span className="text-xs">{type.label}</span>
+                    <span className="text-xs text-center leading-tight">{type.label}</span>
                   </button>
                 ))}
               </div>
@@ -979,18 +1840,20 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                         </div>
                         <div>
                           <label className="text-xs font-bold text-gray-400 uppercase mb-3 block tracking-widest">Select new response type if needed</label>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            {[
-                              { id: 'smiley_faces', label: 'Smileys', icon: '😊' },
-                              { id: 'star_rating', label: 'Stars', icon: '⭐' },
-                              { id: 'scale', label: 'Scale', icon: '📊' },
-                              { id: 'yes_no', label: 'Yes/No', icon: '✅' }
-                            ].map(type => (
-                              <button key={type.id} type="button" onClick={() => handleEditResponseTypeChange(type.id)}
-                                className={`p-3 rounded-xl font-bold transition-all border-2 flex flex-col items-center gap-1 ${editingQuestion.response_type === type.id ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-indigo-300'
-                                  }`}>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                            {RESPONSE_TYPES.map(type => (
+                              <button
+                                key={type.id}
+                                type="button"
+                                onClick={() => handleEditResponseTypeChange(type.id)}
+                                className={`p-2.5 rounded-xl font-bold transition-all border-2 flex flex-col items-center gap-1 ${
+                                  editingQuestion.response_type === type.id
+                                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-200'
+                                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-indigo-300'
+                                }`}
+                              >
                                 <span className="text-xl">{type.icon}</span>
-                                <span className="text-[10px] uppercase">{type.label}</span>
+                                <span className="text-[10px] text-center leading-tight uppercase">{type.label}</span>
                               </button>
                             ))}
                           </div>
