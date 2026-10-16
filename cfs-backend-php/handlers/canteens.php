@@ -47,7 +47,7 @@ function handleGet()
     if (!isset($query['site'])) {
         // Allow admins to see all canteens, or return empty array for non-admins
         if ($user && isset($user['role']) && $user['role'] === 'admin') {
-            $selectFields = 'c.id, c.name, c.meal_slots, c.site_id, s.location AS site';
+            $selectFields = 'c.id, c.name, c.slug, c.is_active, c.meal_slots, c.site_id, s.location AS site, s.slug AS site_slug';
             if ($hasBranchId)
                 $selectFields .= ', c.branch_id';
             if ($hasSegmentId)
@@ -87,7 +87,7 @@ function handleGet()
     }
 
     if ($hasSiteId) {
-        $selectFields = 'c.name, c.id, c.site_id, c.meal_slots, s.location AS site';
+        $selectFields = 'c.name, c.id, c.slug, c.is_active, c.site_id, c.meal_slots, s.location AS site, s.slug AS site_slug';
         if ($hasBranchId)
             $selectFields .= ', c.branch_id';
         if ($hasSegmentId)
@@ -99,7 +99,7 @@ function handleGet()
         );
     } else {
         $canteens = Database::fetchAll(
-            'SELECT name, id, site, meal_slots FROM canteens WHERE site = ?',
+            'SELECT name, id, site, meal_slots, is_active FROM canteens WHERE site = ?',
             [$site]
         );
     }
@@ -151,6 +151,39 @@ function ensureCanteenSchema()
             }
         }
 
+        // Drop obsolete legacy foreign key referencing `branches` table if present
+        $legacyBranchFk = Database::fetchOne("
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'canteens' 
+              AND COLUMN_NAME = 'branch_id' 
+              AND REFERENCED_TABLE_NAME = 'branches'
+        ");
+        if ($legacyBranchFk && !empty($legacyBranchFk['CONSTRAINT_NAME'])) {
+            $fkName = $legacyBranchFk['CONSTRAINT_NAME'];
+            Database::execute("ALTER TABLE canteens DROP FOREIGN KEY `{$fkName}`");
+        }
+
+        // Ensure branch_id FK references sites(id)
+        if (hasColumn('canteens', 'branch_id') && hasColumn('sites', 'id')) {
+            $branchFk = Database::fetchOne("
+                SELECT CONSTRAINT_NAME 
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'canteens' 
+                  AND COLUMN_NAME = 'branch_id' 
+                  AND REFERENCED_TABLE_NAME = 'sites'
+            ");
+            if (!$branchFk) {
+                try {
+                    Database::execute("ALTER TABLE canteens ADD CONSTRAINT canteens_branch_fk FOREIGN KEY (branch_id) REFERENCES sites(id) ON DELETE CASCADE");
+                } catch (Throwable $e) {
+                    // Non-fatal if index or constraint cannot be created
+                }
+            }
+        }
+
         // Ensure unique key on (site, name)
         $unique = Database::fetchOne("SHOW INDEX FROM canteens WHERE Key_name = 'unique_site_canteen'");
         if (!$unique) {
@@ -175,6 +208,36 @@ function ensureCanteenSchema()
                 Database::execute("ALTER TABLE canteens ADD INDEX idx_site (site)");
             }
         }
+
+        // Add is_active column if missing (default 1 = active)
+        if (!hasColumn('canteens', 'is_active')) {
+            Database::execute("ALTER TABLE canteens ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1");
+        }
+
+        // Add slug column if missing
+        if (!hasColumn('canteens', 'slug')) {
+            Database::execute("ALTER TABLE canteens ADD COLUMN slug VARCHAR(200) NULL AFTER name");
+        }
+        // Re-sync all slugs using PHP generateSlug for consistency with frontend toSlug()
+        $allCanteens = Database::fetchAll("SELECT id, name, slug FROM canteens");
+        foreach ($allCanteens as $c) {
+            $correct = generateSlug($c['name']);
+            if ($c['slug'] !== $correct) {
+                Database::execute("UPDATE canteens SET slug = ? WHERE id = ?", [$correct, $c['id']]);
+            }
+        }
+
+        // Add slug to sites table if missing
+        if (!hasColumn('sites', 'slug')) {
+            Database::execute("ALTER TABLE sites ADD COLUMN slug VARCHAR(200) NULL");
+        }
+        $allSites = Database::fetchAll("SELECT id, location, slug FROM sites");
+        foreach ($allSites as $s) {
+            $correct = generateSlug($s['location']);
+            if ($s['slug'] !== $correct) {
+                Database::execute("UPDATE sites SET slug = ? WHERE id = ?", [$correct, $s['id']]);
+            }
+        }
     } catch (Throwable $e) {
         // Log but do not block requests; better to return clear error
         error_log('Canteen schema check failed: ' . $e->getMessage());
@@ -193,6 +256,15 @@ function getSiteIdByName($siteName)
 {
     $row = Database::fetchOne('SELECT id FROM sites WHERE location = ?', [$siteName]);
     return $row ? (int) $row['id'] : null;
+}
+
+function generateSlug($name)
+{
+    $slug = mb_strtolower(trim($name));
+    $slug = preg_replace('/[&]+/', 'and', $slug);
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = trim($slug, '-');
+    return $slug;
 }
 
 /**
@@ -221,6 +293,17 @@ function handlePost()
         if (!$siteId) {
             Response::error('Site not found', 404);
             return;
+        }
+    }
+
+    if ($hasBranchId) {
+        if ($siteId) {
+            $branchId = $siteId;
+        } elseif ($branchId) {
+            $validSite = Database::fetchOne('SELECT id FROM sites WHERE id = ?', [$branchId]);
+            if (!$validSite) {
+                $branchId = null;
+            }
         }
     }
 
@@ -270,6 +353,12 @@ function handlePost()
         }
         $cols[] = 'name';
         $vals[] = $name;
+
+        // Auto-generate slug
+        if (hasColumn('canteens', 'slug')) {
+            $cols[] = 'slug';
+            $vals[] = generateSlug($name);
+        }
 
         $placeholders = implode(',', array_fill(0, count($cols), '?'));
         $sql = 'INSERT INTO canteens (' . implode(',', $cols) . ') VALUES (' . $placeholders . ')';
@@ -384,6 +473,23 @@ function handlePut()
     if ($hasSegmentId && isset($data['segment_id'])) {
         $setClauses[] = 'segment_id = ?';
         $params[] = $data['segment_id'];
+    }
+
+    // Add new_name for renaming
+    if (isset($data['new_name']) && trim($data['new_name']) !== '') {
+        $setClauses[] = 'name = ?';
+        $params[] = trim($data['new_name']);
+        // Update slug when renaming
+        if (hasColumn('canteens', 'slug')) {
+            $setClauses[] = 'slug = ?';
+            $params[] = generateSlug(trim($data['new_name']));
+        }
+    }
+
+    // Toggle is_active
+    if (isset($data['is_active'])) {
+        $setClauses[] = 'is_active = ?';
+        $params[] = intval($data['is_active']) ? 1 : 0;
     }
 
     // Only update if there are fields to update

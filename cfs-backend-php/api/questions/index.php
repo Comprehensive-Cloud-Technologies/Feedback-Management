@@ -215,6 +215,17 @@ function handlePost()
         }
     }
 
+    if ($hasBranchId) {
+        if ($siteId) {
+            $branchId = $siteId;
+        } elseif ($branchId) {
+            $validSite = Database::fetchOne('SELECT id FROM sites WHERE id = ?', [$branchId]);
+            if (!$validSite) {
+                $branchId = null;
+            }
+        }
+    }
+
     try {
         // Branch admin can only add to their site
         if ($user['role'] === 'branch_admin' && $user['site'] !== $site) {

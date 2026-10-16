@@ -76,10 +76,10 @@ function handleGet()
 function handlePost()
 {
     $data = Response::getBody();
-    Response::validateRequired($data, ['location', 'branch_location']);
+    Response::validateRequired($data, ['location']);
 
     $location = $data['location'];
-    $branchLocation = $data['branch_location'];
+    $branchLocation = isset($data['branch_location']) ? $data['branch_location'] : '';
     $segmentId = isset($data['segment_id']) ? intval($data['segment_id']) : null;
 
     // Check if site already exists
@@ -114,6 +114,17 @@ function handlePost()
             'INSERT INTO sites (location, branch_location, segment_id, created_at) VALUES (?, ?, ?, NOW())',
             [$location, $branchLocation, $segmentId]
         );
+        $newSiteId = Database::lastInsertId();
+
+        try {
+            $hasBranches = Database::fetchOne("SHOW TABLES LIKE 'branches'");
+            if ($hasBranches) {
+                Database::execute(
+                    'INSERT INTO branches (id, segment_id, branch_name, branch_location) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE branch_name = VALUES(branch_name), branch_location = VALUES(branch_location), segment_id = VALUES(segment_id)',
+                    [$newSiteId, $segmentId, $location, $branchLocation]
+                );
+            }
+        } catch (Throwable $e) {}
 
         Database::commit();
         Response::success(['success' => true]);
@@ -131,11 +142,11 @@ function handlePost()
 function handlePut()
 {
     $data = Response::getBody();
-    Response::validateRequired($data, ['id', 'location', 'branch_location']);
+    Response::validateRequired($data, ['id', 'location']);
 
     $id = $data['id'];
     $location = $data['location'];
-    $branchLocation = $data['branch_location'];
+    $branchLocation = isset($data['branch_location']) ? $data['branch_location'] : '';
     $segmentId = isset($data['segment_id']) ? intval($data['segment_id']) : null;
 
     // Validate segment_id if provided
@@ -154,6 +165,16 @@ function handlePut()
         'UPDATE sites SET location = ?, branch_location = ?, segment_id = ? WHERE id = ?',
         [$location, $branchLocation, $segmentId, $id]
     );
+
+    try {
+        $hasBranches = Database::fetchOne("SHOW TABLES LIKE 'branches'");
+        if ($hasBranches) {
+            Database::execute(
+                'UPDATE branches SET branch_name = ?, branch_location = ?, segment_id = ? WHERE id = ?',
+                [$location, $branchLocation, $segmentId, $id]
+            );
+        }
+    } catch (Throwable $e) {}
 
     Response::success(['success' => true]);
 }
@@ -237,6 +258,13 @@ function handleDelete()
 
         // 3. Delete Site (if this fails, bubble up)
         Database::execute('DELETE FROM sites WHERE id = ?', [$id]);
+
+        try {
+            $hasBranches = Database::fetchOne("SHOW TABLES LIKE 'branches'");
+            if ($hasBranches) {
+                Database::execute('DELETE FROM branches WHERE id = ?', [$id]);
+            }
+        } catch (Throwable $e) {}
 
         try {
             Database::execute('SET FOREIGN_KEY_CHECKS=1');

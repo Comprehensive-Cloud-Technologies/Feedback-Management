@@ -4,7 +4,6 @@
  */
 
 try {
-    // Initialize first - must be in try block
     require_once __DIR__ . '/../init.php';
     ensureCanteenSchema();
     
@@ -33,10 +32,6 @@ try {
     exit(0);
 }
 
-/**
- * GET /api/canteens?site=xxx - List canteens for a site
- * GET /api/canteens - List all canteens (admin only)
- */
 function handleGet()
 {
     $user = Auth::optional();
@@ -45,20 +40,14 @@ function handleGet()
     $hasBranchId = hasColumn('canteens', 'branch_id');
     $hasSegmentId = hasColumn('canteens', 'segment_id');
 
-    // If no site specified, return all canteens (for admin dashboard)
     if (!isset($query['site'])) {
-        // Allow admins to see all canteens, or return empty array for non-admins
         if ($user && isset($user['role']) && $user['role'] === 'admin') {
-            $selectFields = 'c.id, c.name, c.meal_slots, c.site_id, s.location AS site';
+            $selectFields = 'c.id, c.name, c.slug, c.is_active, c.meal_slots, c.site_id, s.location AS site, s.slug AS site_slug';
             if ($hasBranchId) $selectFields .= ', c.branch_id';
             if ($hasSegmentId) $selectFields .= ', c.segment_id';
             
             $allCanteens = Database::fetchAll("SELECT $selectFields FROM canteens c LEFT JOIN sites s ON c.site_id = s.id");
-            $canteenNames = array_map(function ($row) {
-                return $row['name'];
-            }, $allCanteens);
-
-            // Process slots
+            $canteenNames = array_map(function ($row) { return $row['name']; }, $allCanteens);
             foreach ($allCanteens as &$c) {
                 $c['meal_slots'] = (!empty($c['meal_slots'])) ? json_decode($c['meal_slots'], true) : [];
             }
@@ -67,6 +56,23 @@ function handleGet()
             $allCanteens = [];
         }
         Response::success(['canteens' => $canteenNames, 'details' => $allCanteens]);
+        return;
+    }
+
+    // Slug-based lookup: GET /canteens?site_slug=xxx&canteen_slug=yyy
+    if (isset($query['site_slug']) && isset($query['canteen_slug'])) {
+        $siteSlug = $query['site_slug'];
+        $canteenSlug = $query['canteen_slug'];
+        $row = Database::fetchOne(
+            'SELECT c.id, c.name, c.slug, c.is_active, c.meal_slots, s.location AS site, s.slug AS site_slug FROM canteens c JOIN sites s ON c.site_id = s.id WHERE s.slug = ? AND c.slug = ?',
+            [$siteSlug, $canteenSlug]
+        );
+        if (!$row) {
+            Response::error('Canteen not found', 404);
+            return;
+        }
+        $row['meal_slots'] = (!empty($row['meal_slots'])) ? json_decode($row['meal_slots'], true) : [];
+        Response::success(['canteen' => $row]);
         return;
     }
 
@@ -79,7 +85,6 @@ function handleGet()
         }
     }
 
-    // If branch admin, enforce site scoping
     if ($user && isset($user['role']) && $user['role'] === 'branch_admin') {
         if (!isset($user['site']) || $user['site'] !== $site) {
             Response::error(ERROR_MESSAGES['FORBIDDEN'], 403);
@@ -87,7 +92,7 @@ function handleGet()
     }
 
     if ($hasSiteId) {
-        $selectFields = 'c.name, c.id, c.site_id, c.meal_slots, s.location AS site';
+        $selectFields = 'c.name, c.id, c.slug, c.is_active, c.site_id, c.meal_slots, s.location AS site, s.slug AS site_slug';
         if ($hasBranchId) $selectFields .= ', c.branch_id';
         if ($hasSegmentId) $selectFields .= ', c.segment_id';
         
@@ -97,15 +102,12 @@ function handleGet()
         );
     } else {
         $canteens = Database::fetchAll(
-            'SELECT name, id, site, meal_slots FROM canteens WHERE site = ?',
+            'SELECT name, id, site, meal_slots, is_active FROM canteens WHERE site = ?',
             [$site]
         );
     }
 
-    $canteenNames = array_map(function ($row) {
-        return $row['name'];
-    }, $canteens);
-
+    $canteenNames = array_map(function ($row) { return $row['name']; }, $canteens);
     foreach ($canteens as &$c) {
         $c['meal_slots'] = (!empty($c['meal_slots'])) ? json_decode($c['meal_slots'], true) : [];
     }
@@ -113,34 +115,27 @@ function handleGet()
     Response::success(['canteens' => $canteenNames, 'details' => $canteens]);
 }
 
-// Ensure DB has expected columns/keys even if existing table was created without them
 function ensureCanteenSchema()
 {
     try {
         $hasSiteId = hasColumn('canteens', 'site_id');
         $hasSite = hasColumn('canteens', 'site');
 
-        // Add site column if missing
         if (!$hasSite) {
             Database::execute("ALTER TABLE canteens ADD COLUMN site VARCHAR(100) NOT NULL DEFAULT '' AFTER id");
-            // If legacy data exists with only name, backfill site with empty string
             Database::execute("UPDATE canteens SET site = '' WHERE site = ''");
             $hasSite = true;
         }
 
-        // Add meal_slots column if missing
         if (!hasColumn('canteens', 'meal_slots')) {
             Database::execute("ALTER TABLE canteens ADD COLUMN meal_slots JSON NULL AFTER name");
         }
 
-        // Add site_id column if the DB uses FK to sites(id)
         if (!$hasSiteId) {
             $sitePk = hasColumn('sites', 'id');
             if ($sitePk) {
                 Database::execute("ALTER TABLE canteens ADD COLUMN site_id INT NULL AFTER site");
-                // Try to backfill site_id from sites.location when possible
                 Database::execute("UPDATE canteens c JOIN sites s ON c.site = s.location SET c.site_id = s.id WHERE c.site_id IS NULL");
-                // Add FK if not present
                 $fk = Database::fetchOne("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME='canteens' AND COLUMN_NAME='site_id' AND REFERENCED_TABLE_NAME='sites'");
                 if (!$fk) {
                     Database::execute("ALTER TABLE canteens ADD CONSTRAINT canteens_site_fk FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE");
@@ -149,10 +144,41 @@ function ensureCanteenSchema()
             }
         }
 
-        // Ensure unique key on (site, name)
+        // Drop obsolete legacy foreign key referencing `branches` table if present
+        $legacyBranchFk = Database::fetchOne("
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'canteens' 
+              AND COLUMN_NAME = 'branch_id' 
+              AND REFERENCED_TABLE_NAME = 'branches'
+        ");
+        if ($legacyBranchFk && !empty($legacyBranchFk['CONSTRAINT_NAME'])) {
+            $fkName = $legacyBranchFk['CONSTRAINT_NAME'];
+            Database::execute("ALTER TABLE canteens DROP FOREIGN KEY `{$fkName}`");
+        }
+
+        // Ensure branch_id FK references sites(id)
+        if (hasColumn('canteens', 'branch_id') && hasColumn('sites', 'id')) {
+            $branchFk = Database::fetchOne("
+                SELECT CONSTRAINT_NAME 
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'canteens' 
+                  AND COLUMN_NAME = 'branch_id' 
+                  AND REFERENCED_TABLE_NAME = 'sites'
+            ");
+            if (!$branchFk) {
+                try {
+                    Database::execute("ALTER TABLE canteens ADD CONSTRAINT canteens_branch_fk FOREIGN KEY (branch_id) REFERENCES sites(id) ON DELETE CASCADE");
+                } catch (Throwable $e) {
+                    // Non-fatal if index or constraint cannot be created
+                }
+            }
+        }
+
         $unique = Database::fetchOne("SHOW INDEX FROM canteens WHERE Key_name = 'unique_site_canteen'");
         if (!$unique) {
-            // Drop any existing duplicate key on name only to avoid conflict
             $nameIdx = Database::fetchOne("SHOW INDEX FROM canteens WHERE Key_name = 'name'");
             if ($nameIdx) {
                 Database::execute("ALTER TABLE canteens DROP INDEX name");
@@ -164,7 +190,6 @@ function ensureCanteenSchema()
             }
         }
 
-        // Ensure site index exists
         $idx = Database::fetchOne("SHOW INDEX FROM canteens WHERE Key_name = 'idx_site'");
         if (!$idx) {
             if ($hasSiteId) {
@@ -173,10 +198,34 @@ function ensureCanteenSchema()
                 Database::execute("ALTER TABLE canteens ADD INDEX idx_site (site)");
             }
         }
+
+        if (!hasColumn('canteens', 'is_active')) {
+            Database::execute("ALTER TABLE canteens ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1");
+        }
+
+        if (!hasColumn('canteens', 'slug')) {
+            Database::execute("ALTER TABLE canteens ADD COLUMN slug VARCHAR(200) NULL AFTER name");
+        }
+        $allCanteens = Database::fetchAll("SELECT id, name, slug FROM canteens");
+        foreach ($allCanteens as $c) {
+            $correct = generateSlug($c['name']);
+            if ($c['slug'] !== $correct) {
+                Database::execute("UPDATE canteens SET slug = ? WHERE id = ?", [$correct, $c['id']]);
+            }
+        }
+
+        if (!hasColumn('sites', 'slug')) {
+            Database::execute("ALTER TABLE sites ADD COLUMN slug VARCHAR(200) NULL");
+        }
+        $allSites = Database::fetchAll("SELECT id, location, slug FROM sites");
+        foreach ($allSites as $s) {
+            $correct = generateSlug($s['location']);
+            if ($s['slug'] !== $correct) {
+                Database::execute("UPDATE sites SET slug = ? WHERE id = ?", [$correct, $s['id']]);
+            }
+        }
     } catch (Throwable $e) {
-        // Log but do not block requests; better to return clear error
         error_log('Canteen schema check failed: ' . $e->getMessage());
-        // Surface a clear error so caller can fix DB quickly
         Response::error('Database schema error for canteens: ' . $e->getMessage(), 500);
     }
 }
@@ -193,13 +242,18 @@ function getSiteIdByName($siteName)
     return $row ? (int)$row['id'] : null;
 }
 
-/**
- * POST /api/canteens - Create canteen
- */
+function generateSlug($name)
+{
+    $slug = mb_strtolower(trim($name));
+    $slug = preg_replace('/[&]+/', 'and', $slug);
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = trim($slug, '-');
+    return $slug;
+}
+
 function handlePost()
 {
     $user = Auth::requireAdminOrBranch();
-
     $hasSiteId = hasColumn('canteens', 'site_id');
     $hasSite = hasColumn('canteens', 'site');
     $hasBranchId = hasColumn('canteens', 'branch_id');
@@ -216,38 +270,30 @@ function handlePost()
     
     if ($hasSiteId) {
         $siteId = getSiteIdByName($site);
-        if (!$siteId) {
-            Response::error('Site not found', 404);
-            return;
+        if (!$siteId) { Response::error('Site not found', 404); return; }
+    }
+
+    if ($hasBranchId) {
+        if ($siteId) {
+            $branchId = $siteId;
+        } elseif ($branchId) {
+            $validSite = Database::fetchOne('SELECT id FROM sites WHERE id = ?', [$branchId]);
+            if (!$validSite) {
+                $branchId = null;
+            }
         }
     }
 
     try {
-        // If branch admin, verify site
-        if ($user['role'] === 'branch_admin' && $user['site'] !== $site) {
-            Response::error(ERROR_MESSAGES['FORBIDDEN'], 403);
-            return;
-        }
+        if ($user['role'] === 'branch_admin' && $user['site'] !== $site) { Response::error(ERROR_MESSAGES['FORBIDDEN'], 403); return; }
 
-        // Check if canteen already exists
         if ($hasSiteId) {
-            $existing = Database::fetchOne(
-                'SELECT id FROM canteens WHERE site_id = ? AND name = ?',
-                [$siteId, $name]
-            );
+            $existing = Database::fetchOne('SELECT id FROM canteens WHERE site_id = ? AND name = ?', [$siteId, $name]);
         } else {
-            $existing = Database::fetchOne(
-                'SELECT id FROM canteens WHERE site = ? AND name = ?',
-                [$site, $name]
-            );
+            $existing = Database::fetchOne('SELECT id FROM canteens WHERE site = ? AND name = ?', [$site, $name]);
         }
+        if ($existing) { Response::error('Canteen already exists for this site', 409); return; }
 
-        if ($existing) {
-            Response::error('Canteen already exists for this site', 409);
-            return;
-        }
-
-        // Build insert dynamically depending on available columns
         $cols = [];
         $vals = [];
         if ($hasBranchId && $branchId) { $cols[] = 'branch_id'; $vals[] = $branchId; }
@@ -256,11 +302,10 @@ function handlePost()
         if ($hasSite)   { $cols[] = 'site';    $vals[] = $site; }
         $cols[] = 'name';
         $vals[] = $name;
+        if (hasColumn('canteens', 'slug')) { $cols[] = 'slug'; $vals[] = generateSlug($name); }
 
         $placeholders = implode(',', array_fill(0, count($cols), '?'));
-        $sql = 'INSERT INTO canteens (' . implode(',', $cols) . ') VALUES (' . $placeholders . ')';
-        Database::execute($sql, $vals);
-
+        Database::execute('INSERT INTO canteens (' . implode(',', $cols) . ') VALUES (' . $placeholders . ')', $vals);
         Response::success(['success' => true]);
     } catch (Exception $e) {
         error_log("Canteens POST error: " . $e->getMessage());
@@ -268,62 +313,32 @@ function handlePost()
     }
 }
 
-/**
- * DELETE /api/canteens?site=xxx&name=xxx - Delete canteen
- */
 function handleDelete()
 {
     $user = Auth::requireAdminOrBranch();
-
     $hasSiteId = hasColumn('canteens', 'site_id');
-
     $query = Response::getQuery();
 
-    if (!isset($query['site']) || !isset($query['name'])) {
-        Response::error('Missing site or name parameter', 400);
-    }
+    if (!isset($query['site']) || !isset($query['name'])) { Response::error('Missing site or name parameter', 400); }
 
     $site = $query['site'];
     $name = $query['name'];
     $siteId = null;
-    if ($hasSiteId) {
-        $siteId = getSiteIdByName($site);
-        if (!$siteId) {
-            Response::error('Site not found', 404);
-        }
-    }
-
-    // If branch admin, verify site
-    if ($user['role'] === 'branch_admin' && $user['site'] !== $site) {
-        Response::error(ERROR_MESSAGES['FORBIDDEN'], 403);
-    }
+    if ($hasSiteId) { $siteId = getSiteIdByName($site); if (!$siteId) { Response::error('Site not found', 404); } }
+    if ($user['role'] === 'branch_admin' && $user['site'] !== $site) { Response::error(ERROR_MESSAGES['FORBIDDEN'], 403); }
 
     if ($hasSiteId) {
-        $result = Database::execute(
-            'DELETE FROM canteens WHERE site_id = ? AND name = ?',
-            [$siteId, $name]
-        );
+        $result = Database::execute('DELETE FROM canteens WHERE site_id = ? AND name = ?', [$siteId, $name]);
     } else {
-        $result = Database::execute(
-            'DELETE FROM canteens WHERE site = ? AND name = ?',
-            [$site, $name]
-        );
+        $result = Database::execute('DELETE FROM canteens WHERE site = ? AND name = ?', [$site, $name]);
     }
-
-    if ($result === 0) {
-        Response::error('Canteen not found', 404);
-    }
-
+    if ($result === 0) { Response::error('Canteen not found', 404); }
     Response::success(['success' => true]);
 }
 
-/**
- * PUT /api/canteens - Update canteen details (meal slots)
- */
 function handlePut()
 {
     $user = Auth::requireAdminOrBranch();
-
     $hasSiteId = hasColumn('canteens', 'site_id');
     $hasBranchId = hasColumn('canteens', 'branch_id');
     $hasSegmentId = hasColumn('canteens', 'segment_id');
@@ -334,57 +349,38 @@ function handlePut()
     $site = $data['site'];
     $name = $data['name'];
     $siteId = null;
-    if ($hasSiteId) {
-        $siteId = getSiteIdByName($site);
-        if (!$siteId) {
-            Response::error('Site not found', 404);
-        }
-    }
+    if ($hasSiteId) { $siteId = getSiteIdByName($site); if (!$siteId) { Response::error('Site not found', 404); } }
+    if ($user['role'] === 'branch_admin' && $user['site'] !== $site) { Response::error(ERROR_MESSAGES['FORBIDDEN'], 403); }
 
-    // If branch admin, verify site
-    if ($user['role'] === 'branch_admin' && $user['site'] !== $site) {
-        Response::error(ERROR_MESSAGES['FORBIDDEN'], 403);
-    }
-
-    // Build update query dynamically
     $setClauses = [];
     $params = [];
 
-    // Check if meal_slots is provided
     if (isset($data['meal_slots'])) {
-        $meal_slots = $data['meal_slots'];
-        if (!is_array($meal_slots)) {
-            $meal_slots = [];
-        }
+        $meal_slots = is_array($data['meal_slots']) ? $data['meal_slots'] : [];
         $setClauses[] = 'meal_slots = ?';
         $params[] = json_encode($meal_slots);
     }
-
-    // Add branch_id if provided
-    if ($hasBranchId && isset($data['branch_id'])) {
-        $setClauses[] = 'branch_id = ?';
-        $params[] = $data['branch_id'];
+    if ($hasBranchId && isset($data['branch_id'])) { $setClauses[] = 'branch_id = ?'; $params[] = $data['branch_id']; }
+    if ($hasSegmentId && isset($data['segment_id'])) { $setClauses[] = 'segment_id = ?'; $params[] = $data['segment_id']; }
+    if (isset($data['new_name']) && trim($data['new_name']) !== '') {
+        $setClauses[] = 'name = ?';
+        $params[] = trim($data['new_name']);
+        if (hasColumn('canteens', 'slug')) { $setClauses[] = 'slug = ?'; $params[] = generateSlug(trim($data['new_name'])); }
+    }
+    if (isset($data['is_active'])) {
+        $setClauses[] = 'is_active = ?';
+        $params[] = intval($data['is_active']) ? 1 : 0;
     }
 
-    // Add segment_id if provided
-    if ($hasSegmentId && isset($data['segment_id'])) {
-        $setClauses[] = 'segment_id = ?';
-        $params[] = $data['segment_id'];
-    }
-
-    // Only update if there are fields to update
     if (!empty($setClauses)) {
         $setClause = implode(', ', $setClauses);
         if ($hasSiteId) {
-            $params[] = $siteId;
-            $params[] = $name;
+            $params[] = $siteId; $params[] = $name;
             Database::execute("UPDATE canteens SET $setClause WHERE site_id = ? AND name = ?", $params);
         } else {
-            $params[] = $site;
-            $params[] = $name;
+            $params[] = $site; $params[] = $name;
             Database::execute("UPDATE canteens SET $setClause WHERE site = ? AND name = ?", $params);
         }
     }
-
     Response::success(['success' => true]);
 }
