@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getEndpoints } from '../constants';
+import { SearchInput, matchesSearch } from './SearchInput';
 
 interface Segment {
   id: number;
@@ -28,6 +29,7 @@ interface Canteen {
 const AdminCanteens: React.FC = () => {
   const [canteens, setCanteens] = useState<Canteen[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const endpoints = getEndpoints();
   const [error, setError] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
@@ -363,6 +365,12 @@ const AdminCanteens: React.FC = () => {
     setLoading(false);
   };
 
+  const filteredCanteens = canteens.filter((c) => {
+    const matchesSegment = selectedFilterSegment === 'All Segments' || c.segment_name === selectedFilterSegment;
+    const matchesSearchText = matchesSearch(searchQuery, [c.name, c.site, c.segment_name]);
+    return matchesSegment && matchesSearchText;
+  });
+
   return (
     <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
       {/* Toast Notification Container in Top-Right Corner */}
@@ -387,7 +395,11 @@ const AdminCanteens: React.FC = () => {
       {/* Header */}
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 mb-6 shadow flex items-center justify-between px-4">
         <h2 className="text-xl font-bold text-white">Manage Canteens</h2>
-        <span className="text-white font-semibold text-base">Total: {canteens.length}</span>
+        <span className="text-white font-semibold text-base">
+          {searchQuery.trim() || selectedFilterSegment !== 'All Segments'
+            ? `Showing ${filteredCanteens.length} of ${canteens.length}`
+            : `Total: ${canteens.length}`}
+        </span>
       </div>
 
       {/* Add Canteen Form */}
@@ -444,7 +456,7 @@ const AdminCanteens: React.FC = () => {
       </form>
 
       {/* Filter Bar */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-100 flex items-center gap-4">
+      <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-100 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <label className="text-sm font-bold text-gray-500 uppercase tracking-wider">Filter By Segment:</label>
           <select
@@ -458,8 +470,16 @@ const AdminCanteens: React.FC = () => {
             ))}
           </select>
         </div>
-        <div className="ml-auto text-xs font-bold text-gray-400">
-          Showing {canteens.filter(c => selectedFilterSegment === 'All Segments' || c.segment_name === selectedFilterSegment).length} Canteens
+        <SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search canteens, branch, segment..."
+          className="w-full sm:w-72"
+        />
+        <div className="sm:ml-auto text-xs font-bold text-gray-400">
+          {searchQuery.trim() || selectedFilterSegment !== 'All Segments'
+            ? `Showing ${filteredCanteens.length} of ${canteens.length} Canteens`
+            : `Showing ${canteens.length} Canteens`}
         </div>
       </div>
 
@@ -477,9 +497,7 @@ const AdminCanteens: React.FC = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {canteens
-              .filter(c => selectedFilterSegment === 'All Segments' || c.segment_name === selectedFilterSegment)
-              .map((canteen, idx) => (
+            {filteredCanteens.map((canteen, idx) => (
                 <tr key={`${canteen.site}-${canteen.name}-${idx}`} className={`hover:bg-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                   <td className="p-3 text-sm font-medium text-blue-600">{canteen.segment_name || '-'}</td>
                   <td className="p-3 text-sm font-medium text-gray-900">{canteen.site}</td>
@@ -536,6 +554,9 @@ const AdminCanteens: React.FC = () => {
         </table>
         {canteens.length === 0 && !loading && (
           <p className="text-center py-6 text-gray-500">No canteens found. Add one above.</p>
+        )}
+        {canteens.length > 0 && filteredCanteens.length === 0 && !loading && (
+          <p className="text-center py-6 text-gray-500">No canteens match your filters or search.</p>
         )}
       </div>
 

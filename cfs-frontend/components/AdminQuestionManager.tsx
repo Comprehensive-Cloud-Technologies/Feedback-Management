@@ -4,6 +4,7 @@ import { FaSave, FaTimes, FaPlus, FaTrash, FaArrowUp, FaArrowDown, FaCog } from 
 import { CustomQuestionRenderer } from './CustomQuestionRenderer';
 import { CustomFieldDefinition, CustomFieldType, QuestionResponseType, FormSettings, ThemeId, ThemeCustomTexts } from '../types';
 import ThemeManagerSection from './ThemeManagerSection';
+import { SearchInput, matchesSearch } from './SearchInput';
 
 // ============= SEARCHABLE DROPDOWN COMPONENT =============
 interface SearchableDropdownProps {
@@ -777,7 +778,13 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
   const [selectedSite, setSelectedSite] = useState<string>(initialSite || '');
   const [canteens, setCanteens] = useState<Canteen[]>([]);
   const [selectedCanteen, setSelectedCanteen] = useState<string>(''); // Stores canteen name
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Reset search when site or canteen context changes
+  useEffect(() => {
+    setSearchQuery('');
+  }, [selectedSite, selectedCanteen]);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSelectedSite, setImportSelectedSite] = useState<string>('');
   const [importCanteensForSite, setImportCanteensForSite] = useState<Canteen[]>([]);
@@ -1362,6 +1369,12 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
     }
   };
 
+  const filteredQuestions = questions.filter((q) => {
+    const typeObj = RESPONSE_TYPES.find((t) => t.id === q.response_type);
+    const typeLabel = typeObj ? typeObj.label : '';
+    return matchesSearch(searchQuery, [q.question_text, q.response_type, typeLabel]);
+  });
+
   return (
     <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
       {/* Import Questions Modal */}
@@ -1839,13 +1852,31 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
 
       {/* Questions List */}
       <div className="p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center gap-2">📝 Step 3: View & Manage Questions {selectedSite && `for ${selectedSite}`}</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">📝 Step 3: View & Manage Questions {selectedSite && `for ${selectedSite}`}</h3>
+            {searchQuery.trim() && (
+              <span className="text-xs text-gray-500 font-semibold">
+                ({filteredQuestions.length} of {questions.length})
+              </span>
+            )}
+          </div>
+          {questions.length > 0 && (
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search questions or type..."
+              className="w-full sm:w-64"
+            />
+          )}
+        </div>
 
         {loading && <div className="text-center py-6 text-gray-500">Loading questions...</div>}
 
         {!loading && questions.length > 0 ? (
-          <div className="space-y-3">
-            {questions.map(q => (
+          filteredQuestions.length > 0 ? (
+            <div className="space-y-3">
+              {filteredQuestions.map(q => (
               <div key={q.id} className="bg-white p-4 rounded-lg border-l-4 border-primary-500 shadow">
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex-1">
@@ -1924,7 +1955,12 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No questions match your search "{searchQuery}".
+            </div>
+          )
         ) : (
           !loading && <div className="text-center py-8 text-gray-500">{selectedSite ? 'No questions found for this site.' : 'Select a site to view questions.'}</div>
         )}

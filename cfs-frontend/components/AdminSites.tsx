@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getEndpoints } from '../constants';
+import { SearchInput, matchesSearch } from './SearchInput';
 
 interface Segment {
   id: number;
@@ -33,6 +34,7 @@ const AdminSites: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingSite, setEditingSite] = useState({ location: '', branch_location: '', segment_id: '' });
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const endpoints = getEndpoints();
 
   const fetchSites = async () => {
@@ -196,41 +198,6 @@ const AdminSites: React.FC = () => {
     setLoading(false);
   };
 
-  const handleLogoUpload = async (site: Site, file: File) => {
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64Logo = e.target?.result as string;
-        const token = localStorage.getItem('canteenAdminJWT');
-        
-        // Use ADMIN_BRANCH_ADMINS endpoint to store logo for this branch/site
-        const res = await fetch(endpoints.ADMIN_BRANCH_ADMINS, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Token': token,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            site: site.location,
-            logo: base64Logo
-          })
-        });
-
-        if (res.ok) {
-          await fetchSites();
-          showNotification(`Logo uploaded for ${site.location}! 🎉`);
-        } else {
-          const error = await res.json();
-          alert(error.error || 'Failed to upload logo');
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (e) {
-      alert('Failed to process image');
-    }
-  };
-
   const handleDelete = async (id: number, location: string) => {
     if (!confirm(`⚠️ DANGER: Delete "${location}"?\n\nThis will DELETE ALL DATA (Canteens, Feedback, Admins) for this branch.`)) {
       return;
@@ -265,6 +232,16 @@ const AdminSites: React.FC = () => {
     setLoading(false);
   };
 
+  const filteredSites = sites.filter((site) => {
+    const adminUsernames = site.admins ? site.admins.map((a) => a.username).join(' ') : '';
+    return matchesSearch(searchQuery, [
+      site.segment_name,
+      site.location,
+      site.branch_location,
+      adminUsernames,
+    ]);
+  });
+
   return (
     <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
       {/* Toast Notification Container in Top-Right Corner */}
@@ -288,7 +265,9 @@ const AdminSites: React.FC = () => {
 
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 mb-6 shadow flex items-center justify-between px-4">
         <h2 className="text-xl font-bold text-white">Manage Branches</h2>
-        <span className="text-white font-semibold text-base">Total: {sites.length}</span>
+        <span className="text-white font-semibold text-base">
+          {searchQuery.trim() ? `Showing ${filteredSites.length} of ${sites.length}` : `Total: ${sites.length}`}
+        </span>
       </div>
 
       <form onSubmit={handleAddSite} className="mb-6 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-100">
@@ -317,6 +296,15 @@ const AdminSites: React.FC = () => {
         </div>
       </form>
 
+      {/* Search Bar placed directly above the table, aligned to the right */}
+      <div className="flex justify-end items-center mb-3">
+        <SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search branches..."
+        />
+      </div>
+
       <div className="overflow-x-auto rounded-lg border border-gray-200 mb-10">
         <table className="w-full border-collapse">
           <thead>
@@ -325,13 +313,12 @@ const AdminSites: React.FC = () => {
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Segment</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Branch Name</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-              <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Logo</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Admins (Username)</th>
               <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {sites.map((site, idx) => (
+            {filteredSites.map((site, idx) => (
               <tr key={site.id} className={`hover:bg-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                 <td className="p-3 text-sm text-gray-500 font-mono">{site.id}</td>
                 <td className="p-3 text-sm font-medium text-blue-600">
@@ -353,18 +340,6 @@ const AdminSites: React.FC = () => {
                   {editingId === site.id ?
                     <input name="branch_location" value={editingSite.branch_location} onChange={(e) => setEditingSite({ ...editingSite, branch_location: e.target.value })} className="border p-1 rounded w-full" /> :
                     site.branch_location}
-                </td>
-                <td className="p-3 text-sm text-center">
-                  <label className="inline-flex items-center cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-medium transition">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    Upload
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={(e) => e.target.files?.[0] && handleLogoUpload(site, e.target.files[0])}
-                    />
-                  </label>
                 </td>
                 <td className="p-3 text-sm text-gray-600">
                   {site.admins && site.admins.length > 0 ? (
@@ -395,6 +370,9 @@ const AdminSites: React.FC = () => {
           </tbody>
         </table>
         {sites.length === 0 && !loading && <p className="text-center py-8 text-gray-500">No sites found.</p>}
+        {sites.length > 0 && filteredSites.length === 0 && !loading && (
+          <p className="text-center py-8 text-gray-500">No branches match your search "{searchQuery}".</p>
+        )}
       </div>
 
     </div>

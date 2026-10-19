@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FaEdit, FaTrash, FaSave, FaTimes } from 'react-icons/fa';
 import { getEndpoints } from '../constants';
+import { SearchInput, matchesSearch } from './SearchInput';
 
 interface Segment {
   id: number;
@@ -10,6 +11,7 @@ interface Segment {
 
 const AdminFeedback: React.FC = () => {
   const [feedback, setFeedback] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const endpoints = getEndpoints();
   const [error, setError] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
@@ -110,6 +112,19 @@ const AdminFeedback: React.FC = () => {
     if (selectedMealSlot !== 'All Slots' && (fb.meal_category || 'Other') !== selectedMealSlot) return false;
     return true;
   });
+
+  // Search Logic (combines with existing filters across visible columns)
+  const displayFeedback = filteredFeedback.filter((fb: any) =>
+    matchesSearch(searchQuery, [
+      fb.site,
+      fb.canteen || fb.canteen_id,
+      fb.user_name,
+      fb.user_employee_id,
+      fb.user_department,
+      fb.meal_category,
+      fb.user_suggestion
+    ])
+  );
 
   // Extract unique meal slots dynamically from current feedback [NEW]
   const uniqueMealSlots = Array.from(new Set(feedback.map((fb: any) => fb.meal_category || 'Other'))).sort();
@@ -337,14 +352,21 @@ const AdminFeedback: React.FC = () => {
       </div>
 
       <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 px-4 mb-6 shadow flex flex-col md:flex-row items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-white whitespace-nowrap">Manage Feedback</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-white whitespace-nowrap">Manage Feedback</h2>
+          {searchQuery.trim() && (
+            <span className="text-xs bg-white/20 text-white font-semibold px-2 py-0.5 rounded-full">
+              Showing {displayFeedback.length} of {filteredFeedback.length}
+            </span>
+          )}
+        </div>
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2 items-center flex-1 justify-center md:justify-end">
           <select
             value={selectedSegment}
             onChange={e => setSelectedSegment(e.target.value)}
-            className="px-2 py-1 rounded text-sm min-w-[120px]"
+            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
           >
             <option value="All Segments">All Segments</option>
             {segments.map((s: Segment) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -353,7 +375,7 @@ const AdminFeedback: React.FC = () => {
           <select
             value={selectedSite}
             onChange={e => setSelectedSite(e.target.value)}
-            className="px-2 py-1 rounded text-sm min-w-[120px]"
+            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
           >
             <option value="All Sites">All Sites</option>
             {sites.map((s: any) => <option key={s.location} value={s.location}>{s.location}</option>)}
@@ -362,7 +384,7 @@ const AdminFeedback: React.FC = () => {
           <select
             value={selectedCanteen}
             onChange={e => setSelectedCanteen(e.target.value)}
-            className="px-2 py-1 rounded text-sm min-w-[120px]"
+            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
             disabled={selectedSite === 'All Sites'}
           >
             <option value="All Canteens">All Canteens</option>
@@ -373,14 +395,22 @@ const AdminFeedback: React.FC = () => {
           <select
             value={selectedMealSlot}
             onChange={e => setSelectedMealSlot(e.target.value)}
-            className="px-2 py-1 rounded text-sm min-w-[120px]"
+            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
           >
             <option value="All Slots">All Slots</option>
             {uniqueMealSlots.map((slot: string) => <option key={slot} value={slot}>{slot}</option>)}
           </select>
 
+          {/* Search beside Refresh */}
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search feedback..."
+            className="w-full sm:w-56"
+          />
+
           <button
-            className="bg-white text-primary-600 hover:bg-gray-100 px-3 py-1 rounded font-bold text-xs shadow transition-colors"
+            className="bg-white text-primary-600 hover:bg-gray-100 px-3 py-1.5 rounded font-bold text-xs shadow transition-colors whitespace-nowrap"
             onClick={() => fetchFeedback()}
           >
             Refresh
@@ -529,7 +559,7 @@ const AdminFeedback: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredFeedback.map((fb: any, idx: number) => (
+            {displayFeedback.map((fb: any, idx: number) => (
               <tr key={fb.id} className={"transition-colors duration-200 " + (idx % 2 === 0 ? "bg-white" : "bg-gray-50") + " hover:bg-primary-50"}>
                 <td className="p-3 border">{new Date(fb.timestamp).toLocaleString()}</td>
                 <td className="p-3 border">{fb.site}</td>
@@ -566,7 +596,10 @@ const AdminFeedback: React.FC = () => {
           </tbody>
         </table>
       </div>
-      {filteredFeedback.length === 0 && <p className="text-gray-500 text-center">No feedback submissions found.</p>}
+      {filteredFeedback.length === 0 && <p className="text-gray-500 text-center py-6">No feedback submissions found.</p>}
+      {filteredFeedback.length > 0 && displayFeedback.length === 0 && (
+        <p className="text-gray-500 text-center py-6">No feedback submissions match your search "{searchQuery}".</p>
+      )}
       {/* Modal for question-wise ratings */}
       {detailsId && (() => {
         const fb = feedback.find((f: any) => f.id === detailsId);

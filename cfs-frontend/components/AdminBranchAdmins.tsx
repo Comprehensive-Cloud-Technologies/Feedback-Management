@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getEndpoints } from '../constants';
+import { SearchInput, matchesSearch } from './SearchInput';
 
 interface BranchAdmin {
 	id: number;
@@ -17,6 +18,7 @@ const AdminBranchAdmins: React.FC = () => {
 	const [sites, setSites] = useState<Site[]>([]);
 	const [admins, setAdmins] = useState<BranchAdmin[]>([]);
 	const [loading, setLoading] = useState(false);
+	const [searchQuery, setSearchQuery] = useState('');
 	const [error, setError] = useState<string | null>(null);
 	const [notification, setNotification] = useState<string | null>(null);
 
@@ -167,6 +169,10 @@ const AdminBranchAdmins: React.FC = () => {
 		input.click();
 	};
 
+	const filteredAdmins = admins.filter((admin) =>
+		matchesSearch(searchQuery, [admin.site, admin.username])
+	);
+
 	return (
 		<div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
 			{/* Toast Notification Container in Top-Right Corner */}
@@ -192,7 +198,9 @@ const AdminBranchAdmins: React.FC = () => {
 				<h2 className="text-xl font-bold text-white flex items-center gap-2">
 					<span>👥</span> Branch Admin Accounts Management
 				</h2>
-				<span className="text-white font-semibold text-base">Total Admins: {admins.length}</span>
+				<span className="text-white font-semibold text-base">
+					{searchQuery.trim() ? `Showing ${filteredAdmins.length} of ${admins.length}` : `Total Admins: ${admins.length}`}
+				</span>
 			</div>
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -229,9 +237,24 @@ const AdminBranchAdmins: React.FC = () => {
 
 				{/* Admin List Column */}
 				<div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-					<div className="bg-gray-50 p-3 border-b border-gray-100 flex justify-between items-center">
-						<span className="text-xs font-bold text-gray-500 uppercase">Registered Admins</span>
-						<button onClick={fetchData} className="text-indigo-600 text-xs font-bold hover:underline">Refresh List</button>
+					<div className="bg-gray-50 p-3 border-b border-gray-100 flex flex-wrap justify-between items-center gap-3">
+						<div className="flex items-center gap-2">
+							<span className="text-xs font-bold text-gray-500 uppercase">Registered Admins</span>
+							{searchQuery.trim() && (
+								<span className="text-xs text-gray-500 font-semibold">
+									({filteredAdmins.length} of {admins.length})
+								</span>
+							)}
+						</div>
+						<div className="flex items-center gap-3 w-full sm:w-auto">
+							<SearchInput
+								value={searchQuery}
+								onChange={setSearchQuery}
+								placeholder="Search site or username..."
+								className="w-full sm:w-56"
+							/>
+							<button onClick={fetchData} className="text-indigo-600 text-xs font-bold hover:underline whitespace-nowrap">Refresh List</button>
+						</div>
 					</div>
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">
@@ -244,8 +267,8 @@ const AdminBranchAdmins: React.FC = () => {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-50">
-								{admins.length > 0 ? (
-									admins.map((admin) => (
+								{filteredAdmins.length > 0 ? (
+									filteredAdmins.map((admin) => (
 										<tr key={admin.id} className="hover:bg-gray-50/50 transition-colors">
 											<td className="p-3">
 												<span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md font-bold text-[11px] border border-indigo-100">{admin.site}</span>
@@ -276,11 +299,18 @@ const AdminBranchAdmins: React.FC = () => {
 											</td>
 										</tr>
 									))
-								) : (
+								) : admins.length === 0 ? (
 									<tr>
 										<td colSpan={4} className="p-12 text-center text-gray-400 italic">
 											<div className="text-3xl mb-2">👤</div>
 											No branch admins configured yet.
+										</td>
+									</tr>
+								) : (
+									<tr>
+										<td colSpan={4} className="p-12 text-center text-gray-400 italic">
+											<div className="text-3xl mb-2">🔍</div>
+											No branch admins match your search "{searchQuery}".
 										</td>
 									</tr>
 								)}

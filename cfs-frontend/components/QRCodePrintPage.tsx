@@ -5,6 +5,7 @@ import QRCode from 'react-qr-code';
 import { getEndpoints, FRONTEND_URL, API_URL } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { FaPrint } from 'react-icons/fa';
+import { SearchInput, matchesSearch } from './SearchInput';
 import catalystLogo from '../src/images/clogo.png';
 import qrCardBg from '../src/images/cartimg.png';
 
@@ -35,8 +36,8 @@ const QRCodePrintPage: React.FC = () => {
   const endpoints = getEndpoints();
   const [sites, setSites] = useState<SiteData[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('All Branches');
+  const [searchQuery, setSearchQuery] = useState('');
   const [modalData, setModalData] = useState<{ site: string, canteen?: string, title: string, logo?: string } | null>(null);
-  const [printAllQRs, setPrintAllQRs] = useState(false);
 
   // We'll use a dedicated print window to avoid issues with modal transforms
   // and browser print rendering that can produce blank pages. The handlers
@@ -244,10 +245,51 @@ const QRCodePrintPage: React.FC = () => {
     `);
     doc.close();
 
-    setTimeout(() => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-    }, 1000);
+    const triggerPrint = () => {
+      try {
+        printFrame.contentWindow?.focus();
+        printFrame.contentWindow?.print();
+      } catch (err) {
+        console.error('Print trigger error:', err);
+      }
+    };
+
+    // Wait for images in the iframe to finish loading before opening print dialog
+    const imgs = Array.from(doc.images);
+    if (imgs.length === 0) {
+      setTimeout(triggerPrint, 300);
+    } else {
+      let loaded = 0;
+      let fired = false;
+      const onDone = () => {
+        if (!fired) {
+          fired = true;
+          triggerPrint();
+        }
+      };
+
+      imgs.forEach(img => {
+        if (img.complete) {
+          loaded++;
+        } else {
+          img.onload = () => {
+            loaded++;
+            if (loaded === imgs.length) onDone();
+          };
+          img.onerror = () => {
+            loaded++;
+            if (loaded === imgs.length) onDone();
+          };
+        }
+      });
+
+      if (loaded === imgs.length) {
+        setTimeout(onDone, 200);
+      } else {
+        // Fallback timeout in case some images hang
+        setTimeout(onDone, 1200);
+      }
+    }
   };
 
   useEffect(() => {
@@ -301,6 +343,28 @@ const QRCodePrintPage: React.FC = () => {
     fetchData();
   }, []);
 
+  const filteredSites = sites
+    .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
+    .map(site => {
+      if (site.canteens && site.canteens.length > 0) {
+        const matchingCanteens = site.canteens.filter(canteen =>
+          matchesSearch(searchQuery, [site.location, canteen])
+        );
+        return { ...site, canteens: matchingCanteens };
+      } else {
+        const matches = matchesSearch(searchQuery, [site.location]);
+        return matches ? site : null;
+      }
+    })
+    .filter((site): site is SiteData => {
+      if (!site) return false;
+      if (site.canteens && site.canteens.length === 0) return false;
+      return true;
+    });
+
+  const totalQRsCount = filteredSites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0);
+  const allQRsCount = sites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -312,11 +376,15 @@ const QRCodePrintPage: React.FC = () => {
 
           <div className="flex items-center gap-3">
             <div className="text-right mr-4 no-print">
-              <div className="text-white font-bold text-lg leading-none">{sites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0)}</div>
+              <div className="text-white font-bold text-lg leading-none">
+                {searchQuery.trim() || selectedBranch !== 'All Branches'
+                  ? `${totalQRsCount} / ${allQRsCount}`
+                  : totalQRsCount}
+              </div>
               <div className="text-white/70 text-[10px] uppercase font-bold tracking-widest">Total QRs</div>
             </div>
             <button
-              onClick={() => setPrintAllQRs(true)}
+              onClick={handlePrintAll}
               className="bg-white text-primary-600 hover:bg-gray-100 px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg flex items-center gap-2 transition hover:scale-105 no-print"
             >
               <FaPrint /> Print All
@@ -352,13 +420,27 @@ const QRCodePrintPage: React.FC = () => {
               ))}
             </select>
           </div>
+
+          <div className="flex flex-col gap-1 w-full sm:w-auto">
+            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Search QRs</label>
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search branch or canteen..."
+              className="w-full sm:w-72"
+            />
+          </div>
+
+          <div className="sm:ml-auto text-xs font-bold text-gray-400 self-end mb-2">
+            {searchQuery.trim() || selectedBranch !== 'All Branches'
+              ? `Showing ${totalQRsCount} of ${allQRsCount} QRs`
+              : `Total: ${totalQRsCount} QRs`}
+          </div>
         </div>
 
         {/* Filtered Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 no-print">
-          {sites
-            .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
-            .map((site) => (
+          {filteredSites.map((site) => (
               <React.Fragment key={site.location}>
                 {(site.canteens && site.canteens.length > 0) ? (
                   site.canteens.map(canteen => (
@@ -407,6 +489,11 @@ const QRCodePrintPage: React.FC = () => {
                 )}
               </React.Fragment>
             ))}
+          {filteredSites.length === 0 && (
+            <div className="col-span-full py-12 text-center text-gray-500 bg-white rounded-xl border border-gray-200 shadow-sm">
+              No QR codes found matching your filters or search.
+            </div>
+          )}
         </div>
       </div>
 
@@ -474,122 +561,51 @@ const QRCodePrintPage: React.FC = () => {
         </div>
       )}
 
-      {/* Print All QR Codes Modal */}
-      {printAllQRs && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md overflow-auto print:p-0 print:block print:overflow-visible">
-          {/* Close Button */}
-          <button
-            onClick={() => setPrintAllQRs(false)}
-            className="fixed top-6 right-6 text-white/80 hover:text-white z-[60] no-print p-2 transition-transform hover:rotate-90"
-            title="Close Preview"
-          >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-
-          {/* Print Button */}
-          <button
-            onClick={handlePrintAll}
-            className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-full font-bold shadow-xl hover:scale-105 transition flex items-center gap-2 text-lg border-4 border-white/20 no-print z-50 cursor-pointer"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-            PRINT ALL
-          </button>
-
-          {/* Grid of all QR codes */}
-          <div id="qr-print-all-area" className="w-full bg-white" ref={printAllRef}>
-            <style>{`
-              #qr-print-all-area {
-                display: flex;
-                flex-direction: column;
-                gap: 0;
-                padding: 0;
-                margin: 0;
-              }
-              #qr-print-all-area > div {
-                width: 210mm;
-                height: 297mm;
-                display: flex !important;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                padding: 40px;
-                box-sizing: border-box;
-                page-break-after: always;
-                page-break-inside: avoid;
-                break-inside: avoid;
-                background: white;
-              }
-              #qr-print-all-area > div:last-child {
-                page-break-after: auto;
-              }
-              @media print {
-                body { margin: 0; padding: 0; }
-                #qr-print-all-area {
-                  display: flex;
-                  flex-direction: column;
-                  gap: 0;
-                  width: 210mm;
-                  height: auto;
-                }
-                #qr-print-all-area > div {
-                  page-break-after: always;
-                  page-break-inside: avoid;
-                  break-inside: avoid;
-                  width: 210mm;
-                  height: 297mm;
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  justify-content: center;
-                  padding: 40px;
-                }
-                #qr-print-all-area > div:last-child {
-                  page-break-after: auto;
-                }
-              }
-            `}</style>
-            <div className="flex flex-col gap-0">
-              {sites
-                .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
-                .map((site) => (
-                  <React.Fragment key={site.location}>
-                    {(site.canteens && site.canteens.length > 0) ? (
-                      site.canteens.map(canteen => (
-                        <div key={`${site.location}-${canteen}`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
-                          {/* Header logos */}
-                          <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
-                            {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
-                          </div>
-                          <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
-                          <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
-                            <QRCode value={getQRCodeUrl(site.location, canteen)} size={280} />
-                          </div>
-                          <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
-                          <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
-                        </div>
-                      ))
-                    ) : (
-                      <div key={`${site.location}-main`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
-                        {/* Header logos */}
-                        <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
-                          {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
-                        </div>
-                        <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
-                        <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
-                          <QRCode value={getQRCodeUrl(site.location)} size={280} />
-                        </div>
-                        <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
-                        <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
-            </div>
-          </div>
+      {/* Off-screen Print All Container - available for direct printing without modal overlay */}
+      <div
+        id="qr-print-all-area"
+        ref={printAllRef}
+        className="fixed -left-[99999px] top-0 pointer-events-none opacity-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        <div className="flex flex-col gap-0">
+          {filteredSites.map((site) => (
+            <React.Fragment key={site.location}>
+              {(site.canteens && site.canteens.length > 0) ? (
+                site.canteens.map(canteen => (
+                  <div key={`${site.location}-${canteen}`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
+                    {/* Header logos */}
+                    <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
+                      {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
+                    </div>
+                    <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
+                    <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
+                      <QRCode value={getQRCodeUrl(site.location, canteen)} size={280} />
+                    </div>
+                    <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
+                    <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
+                  </div>
+                ))
+              ) : (
+                <div key={`${site.location}-main`} className="qr-collectible flex flex-col items-center justify-center" style={{ position: 'relative' }}>
+                  {/* Header logos */}
+                  <div style={{ position: 'absolute', top: '15mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <img src={catalystLogo} alt="Catalyst" style={{ height: '35px', objectFit: 'contain' }} />
+                    {site.logo && <img src={site.logo} alt="Branch Logo" style={{ height: '45px', objectFit: 'contain', maxWidth: '160px' }} />}
+                  </div>
+                  <h3 className="font-bold text-2xl text-gray-800 text-center mb-6">We Value Your Feedback</h3>
+                  <div className="p-4 border-2 border-gray-300 rounded-lg bg-white">
+                    <QRCode value={getQRCodeUrl(site.location)} size={280} />
+                  </div>
+                  <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
+                  <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   );
 };
