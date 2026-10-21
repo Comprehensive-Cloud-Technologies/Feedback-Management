@@ -67,6 +67,8 @@ export interface FormSettings {
   custom_fields?: CustomFieldDefinition[];
   theme_id?: ThemeId;
   theme_custom_texts?: ThemeCustomTexts | null;
+  bg_image_enabled?: number | boolean;
+  bg_image_data?: string | null;
 }
 
 export type QuestionResponseType =

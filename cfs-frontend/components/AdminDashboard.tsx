@@ -824,24 +824,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
       <main className="p-4 w-full max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-            <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-
-            {/* Print Only Header Date */}
+          {/* Page Title & Print Header */}
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Admin Dashboard</h1>
             <div className="hidden print-header-date text-right">
               <p className="text-sm text-gray-600 font-semibold">{new Date().toLocaleString()}</p>
             </div>
+          </div>
 
-            {/* Filters Row - [NEW] Advanced Filtering */}
-            <div className="flex flex-wrap gap-4 items-end bg-gray-50 p-4 rounded-lg border border-gray-100 print:hidden mt-2">
+          {/* Unified Desktop Filters & Actions Row */}
+          <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200/80 mb-6 print:hidden flex flex-wrap items-end gap-3 justify-between">
+            {/* Filters Container */}
+            <div className="flex flex-wrap items-end gap-2.5 flex-grow">
               {/* 1. Segment Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Segment</label>
+              <div className="flex flex-col gap-1 min-w-[125px] flex-1 sm:flex-initial">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Segment</label>
                 <select
                   value={selectedSegment}
                   onChange={e => setSelectedSegment(e.target.value)}
-                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                  className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs font-semibold bg-white w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="All Segments">All Segments</option>
                   {segments.map((seg) => (
@@ -851,12 +852,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               {/* 2. Branch (Site) Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Branch</label>
+              <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-initial">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Branch</label>
                 <select
                   value={selectedSite}
                   onChange={e => setSelectedSite(e.target.value)}
-                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                  className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs font-semibold bg-white w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="All Sites">All Branches</option>
                   {sites
@@ -874,12 +875,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               {/* 3. Canteen Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Canteen</label>
+              <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-initial">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Canteen</label>
                 <select
                   value={selectedCanteenName}
                   onChange={e => setSelectedCanteenName(e.target.value)}
-                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[140px] focus:ring-2 focus:ring-blue-500"
+                  className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs font-semibold bg-white w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="All Canteens">All Canteens</option>
                   {(selectedSite === 'All Sites'
@@ -892,12 +893,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               {/* 4. Meal Slot Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Meal Slot</label>
+              <div className="flex flex-col gap-1 min-w-[110px] flex-1 sm:flex-initial">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Meal Slot</label>
                 <select
                   value={selectedMealSlot}
                   onChange={e => setSelectedMealSlot(e.target.value)}
-                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[120px] focus:ring-2 focus:ring-blue-500"
+                  className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs font-semibold bg-white w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="All Slots">All Slots</option>
                   {Array.from(new Set(
@@ -914,12 +915,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               {/* 5. Time Range Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Time Range</label>
+              <div className="flex flex-col gap-1 min-w-[115px] flex-1 sm:flex-initial">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Time Range</label>
                 <select
                   value={timeRange}
                   onChange={e => setTimeRange(e.target.value)}
-                  className="px-3 py-2 rounded-md border border-gray-300 text-sm bg-white min-w-[120px] focus:ring-2 focus:ring-blue-500"
+                  className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs font-semibold bg-white w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="All Time">All Time</option>
                   <option value="Today">Today</option>
@@ -933,59 +934,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
               {/* 6. Dynamic Date Pickers */}
               {(timeRange === 'Single Date' || timeRange === 'Custom Range') && (
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-end">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold text-gray-500 uppercase">{timeRange === 'Single Date' ? 'Date' : 'Start Date'}</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{timeRange === 'Single Date' ? 'Date' : 'Start'}</label>
                     <input
                       type="date"
                       value={customStartDate}
                       onChange={e => setCustomStartDate(e.target.value)}
-                      className="px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                      className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   {timeRange === 'Custom Range' && (
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold text-gray-500 uppercase">End Date</label>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">End</label>
                       <input
                         type="date"
                         value={customEndDate}
                         onChange={e => setCustomEndDate(e.target.value)}
-                        className="px-3 py-1.5 rounded-md border border-gray-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                        className="h-9 px-2.5 rounded-lg border border-gray-300 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
                   )}
                 </div>
               )}
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-2 ml-auto">
-                <button
-                  onClick={() => { fetchSegments(); fetchSites(); fetchFeedback(); }}
-                  disabled={isLoading}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors flex items-center gap-2"
-                >
-                  {isLoading ? (
-                    <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                  )}
-                  {isLoading ? 'Refreshing...' : 'Refresh'}
-                </button>
-                <button
-                  onClick={() => {
-                    setTimeout(() => window.print(), 800);
-                  }}
-                  className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
-                >
-                  PDF
-                </button>
-                <button
-                  onClick={exportToCSV}
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
-                >
-                  CSV
-                </button>
-              </div>
+            {/* Action Buttons: Refresh, PDF, CSV */}
+            <div className="flex items-center gap-2 flex-shrink-0 ml-auto pt-1 sm:pt-0">
+              <button
+                onClick={() => { fetchSegments(); fetchSites(); fetchFeedback(); }}
+                disabled={isLoading}
+                className="h-9 bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 rounded-lg text-xs transition shadow-xs flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <div className="animate-spin h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full"></div>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                )}
+                <span>{isLoading ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setTimeout(() => window.print(), 800);
+                }}
+                className="h-9 bg-red-600 hover:bg-red-700 text-white font-bold px-3.5 rounded-lg text-xs transition shadow-xs flex items-center gap-1 active:scale-95"
+              >
+                PDF
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3.5 rounded-lg text-xs transition shadow-xs flex items-center gap-1 active:scale-95"
+              >
+                CSV
+              </button>
             </div>
           </div>
 

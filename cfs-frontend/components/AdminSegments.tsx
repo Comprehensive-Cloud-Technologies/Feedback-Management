@@ -187,8 +187,22 @@ const AdminSegments: React.FC = () => {
   };
 
   // Delete segment
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this segment? This action cannot be undone.')) {
+  const handleDelete = async (segment: Segment) => {
+    // Check if segment has linked branches or canteens
+    if (segment.total_branches > 0 || segment.total_canteens > 0) {
+      const parts = [];
+      if (segment.total_branches > 0) parts.push(`${segment.total_branches} branch(es)`);
+      if (segment.total_canteens > 0) parts.push(`${segment.total_canteens} canteen(s)`);
+      const details = parts.join(' and ');
+      setNotification({
+        message: `Cannot delete segment "${segment.name}": ${details} are linked. Please reassign or remove them first.`,
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 5000);
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete segment "${segment.name}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -196,7 +210,7 @@ const AdminSegments: React.FC = () => {
     setError('');
     try {
       const token = localStorage.getItem('canteenAdminJWT');
-      const response = await fetch(`${endpoints.SEGMENTS}?action=delete&id=${id}`, {
+      const response = await fetch(`${endpoints.SEGMENTS}?action=delete&id=${segment.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -204,9 +218,10 @@ const AdminSegments: React.FC = () => {
         },
       });
 
+      const data = await response.json().catch(() => null);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
+        throw new Error(data?.error || `HTTP ${response.status}`);
       }
 
       setNotification({
@@ -219,7 +234,12 @@ const AdminSegments: React.FC = () => {
       setTimeout(() => setNotification(null), 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete segment';
+      setNotification({
+        message,
+        type: 'error',
+      });
       setError(message);
+      setTimeout(() => setNotification(null), 5000);
       console.error('Delete segment error:', message);
     } finally {
       setLoading(false);
@@ -352,10 +372,10 @@ const AdminSegments: React.FC = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleDelete(segment.id)}
+                        onClick={() => handleDelete(segment)}
                         className="btn btn-sm btn-delete"
-                        disabled={loading || segment.total_branches > 0 || segment.total_canteens > 0}
-                        title={segment.total_branches > 0 || segment.total_canteens > 0 ? 'Delete all branches and canteens first' : ''}
+                        disabled={loading}
+                        title={segment.total_branches > 0 || segment.total_canteens > 0 ? `Cannot delete: ${segment.total_branches} branch(es) and ${segment.total_canteens} canteen(s) linked` : 'Delete segment'}
                       >
                         Delete
                       </button>

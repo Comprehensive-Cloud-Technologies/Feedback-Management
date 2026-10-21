@@ -39,7 +39,7 @@ export const SearchInput: React.FC<SearchInputProps> = ({
   return (
     <div className={`relative flex items-center w-full sm:w-auto ${className}`}>
       <span className="absolute left-3.5 text-gray-400 pointer-events-none flex items-center justify-center">
-        <FaSearch className="w-3.5 h-3.5" />
+        <FaSearch size={14} />
       </span>
       <input
         type="text"
@@ -52,11 +52,11 @@ export const SearchInput: React.FC<SearchInputProps> = ({
         <button
           type="button"
           onClick={handleClear}
-          className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition"
+          className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition flex items-center justify-center"
           title="Clear search"
           aria-label="Clear search"
         >
-          <FaTimes className="w-3 h-3" />
+          <FaTimes size={12} />
         </button>
       )}
     </div>

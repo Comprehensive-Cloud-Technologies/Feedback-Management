@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FormSettings, ThemeId, ThemeCustomTexts } from '../types';
 import { THEME_LIST, getThemeDefinition, resolveThemeTexts, getThemeLayout } from './themes/ThemeRegistry';
-import { FaDesktop, FaMobileAlt, FaUndo, FaSave, FaCheckCircle, FaPalette } from 'react-icons/fa';
+import { FaDesktop, FaMobileAlt, FaUndo, FaSave, FaCheckCircle, FaPalette, FaImage, FaTrash, FaUpload } from 'react-icons/fa';
 import catalystLogo from '../src/images/clogo.png';
 import { getEndpoints } from '../constants';
 
@@ -31,6 +31,8 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
   const [previewRatings, setPreviewRatings] = useState<Record<number, any>>({});
   const [previewCustomFields, setPreviewCustomFields] = useState<Record<string, any>>({});
   const [showAdvancedTexts, setShowAdvancedTexts] = useState<boolean>(true);
+  const [bgUploadError, setBgUploadError] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const endpoints = getEndpoints();
 
   const currentThemeId: ThemeId = (formSettings.theme_id as ThemeId) || 'default';
@@ -88,6 +90,54 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
     setFormSettings(updated);
   };
 
+  // Handle Background Image Upload & Removal for Default Theme
+  const handleBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBgUploadError('');
+
+    // 1. Validate MIME and Extension
+    const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    const validExtensions = /\.(jpe?g|png|webp)$/i;
+    if (!validMimes.includes(file.type) && !validExtensions.test(file.name)) {
+      setBgUploadError('Invalid format. Only JPG, PNG, and WEBP image files are allowed.');
+      return;
+    }
+
+    // 2. Validate file size <= 2 MB
+    if (file.size > 2 * 1024 * 1024) {
+      setBgUploadError(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is 2 MB.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setFormSettings(prev => ({
+          ...prev,
+          bg_image_enabled: 1,
+          bg_image_data: dataUrl,
+        }));
+      }
+    };
+    reader.onerror = () => {
+      setBgUploadError('Failed to read image file. Please try another image.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveBgImage = () => {
+    setBgUploadError('');
+    setFormSettings(prev => ({
+      ...prev,
+      bg_image_enabled: 0,
+      bg_image_data: null,
+    }));
+  };
+
   // Resolve Active Layout Component for Live Preview
   const ActiveLayout = getThemeLayout(currentThemeId);
 
@@ -129,7 +179,7 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-4">
         <div>
           <h3 className="text-xl font-black text-gray-900 flex items-center gap-2">
-            <FaPalette className="text-indigo-600" />
+            <span className="text-indigo-600 flex items-center justify-center"><FaPalette size={20} /></span>
             Step 4: Choose Form Theme & Appearance
           </h3>
           <p className="text-xs sm:text-sm text-gray-600 mt-1">
@@ -301,6 +351,119 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 2b. Default Theme Background Image & Glassmorphism Customization */}
+      {currentThemeId === 'default' && (
+        <div className="bg-white rounded-2xl p-5 border border-indigo-100 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+            <div>
+              <h4 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                <span className="text-indigo-600 flex items-center justify-center"><FaImage size={15} /></span>
+                Background Image & Glassmorphism (Default Theme Only)
+              </h4>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Upload an image to display as the full-viewport cover behind the form with modern glassmorphism.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2.5 cursor-pointer select-none px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100/70 border border-indigo-200 rounded-xl transition">
+              <input
+                type="checkbox"
+                checked={!!formSettings.bg_image_enabled}
+                onChange={(e) => {
+                  setFormSettings(prev => ({
+                    ...prev,
+                    bg_image_enabled: e.target.checked ? 1 : 0
+                  }));
+                }}
+                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-xs font-bold text-indigo-950">Use background image</span>
+            </label>
+          </div>
+
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleBgFileChange}
+            className="hidden"
+          />
+
+          {/* Upload / Preview Card */}
+          {formSettings.bg_image_data ? (
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+              {/* Thumbnail */}
+              <div className="relative w-full sm:w-48 h-28 rounded-lg overflow-hidden border border-gray-300 flex-shrink-0 shadow-inner group">
+                <img
+                  src={formSettings.bg_image_data}
+                  alt="Background preview"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <span className="text-white text-[11px] font-bold">Current Background</span>
+                </div>
+              </div>
+
+              {/* Actions & Info */}
+              <div className="flex-grow space-y-2 text-center sm:text-left w-full">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-gray-800">Custom Background Active</span>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    formSettings.bg_image_enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    {formSettings.bg_image_enabled ? 'Enabled' : 'Disabled (Checkbox Off)'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Glassmorphism effect will apply to headers, question cards, and user input areas when enabled.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 justify-center sm:justify-start">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3.5 py-1.5 bg-white border border-gray-300 hover:border-indigo-400 hover:text-indigo-600 rounded-lg text-xs font-bold text-gray-700 transition shadow-xs flex items-center gap-1.5"
+                  >
+                    <FaUpload size={11} /> Replace Image
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveBgImage}
+                    className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                  >
+                    <FaTrash size={11} /> Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-gray-300 hover:border-indigo-400 bg-gray-50 hover:bg-indigo-50/30 rounded-xl p-6 text-center cursor-pointer transition group"
+            >
+              <div className="w-12 h-12 mx-auto rounded-full bg-indigo-100 group-hover:bg-indigo-200 text-indigo-600 flex items-center justify-center mb-2 transition">
+                <FaImage size={20} />
+              </div>
+              <p className="text-xs font-bold text-gray-800 group-hover:text-indigo-700">
+                Click to upload a background image
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Supported formats: JPG, PNG, WEBP • Max size: 2 MB
+              </p>
+            </div>
+          )}
+
+          {/* Upload Error Banner */}
+          {bgUploadError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold flex items-center gap-2 animate-shake">
+              <span>⚠️</span>
+              <span>{bgUploadError}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 3. Interactive Sandboxed Live Preview */}
       <div className="bg-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl border border-slate-800 space-y-4">

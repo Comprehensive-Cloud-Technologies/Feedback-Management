@@ -104,7 +104,12 @@ const FeedbackChart: React.FC<FeedbackChartProps> = ({ data = [], title, questio
             stackOffset="none"
           >
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" domain={[0, 100]} unit="%" />
+            <XAxis
+              type="number"
+              domain={[0, 100]}
+              ticks={[0, 20, 40, 60, 80, 100]}
+              tickFormatter={(v) => `${Math.round(v)}%`}
+            />
             <YAxis
               dataKey="name"
               type="category"

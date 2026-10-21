@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { getEndpoints } from '../constants';
 import { SearchInput, matchesSearch } from './SearchInput';
+import { SearchableSelect } from './SearchableSelect';
 
 interface Segment {
   id: number;
@@ -53,6 +54,40 @@ const AdminCanteens: React.FC = () => {
   // Canteen Name Editing State
   const [renamingCanteen, setRenamingCanteen] = useState<Canteen | null>(null);
   const [newCanteenName, setNewCanteenName] = useState('');
+
+  // Segment options for SearchableSelect
+  const segmentOptions = useMemo(() => {
+    return segments.map(seg => ({
+      value: String(seg.id),
+      label: seg.name
+    }));
+  }, [segments]);
+
+  // Available Branch options depending on the selected Segment
+  const availableBranchOptions = useMemo(() => {
+    if (!form.segment_id) return [];
+    return sitesWithSegments
+      .filter((s: any) => String(s.segment_id) === String(form.segment_id))
+      .map((s: any) => ({
+        value: s.location,
+        label: s.location
+      }));
+  }, [sitesWithSegments, form.segment_id]);
+
+  const handleSegmentChange = (segId: string) => {
+    setForm(prev => ({
+      ...prev,
+      segment_id: segId,
+      site: '' // Changing Segment resets Branch
+    }));
+  };
+
+  const handleBranchChange = (branchSite: string) => {
+    setForm(prev => ({
+      ...prev,
+      site: branchSite
+    }));
+  };
 
   // Fetch available sites and segments for dropdown
   useEffect(() => {
@@ -408,29 +443,26 @@ const AdminCanteens: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Segment</label>
-            <select
-              name="segment_id"
+            <SearchableSelect
+              options={segmentOptions}
               value={form.segment_id}
-              onChange={e => setForm({ ...form, segment_id: e.target.value })}
-              className="w-full border border-gray-300 p-2 rounded-md focus:ring-2 focus:ring-primary-500"
+              onChange={handleSegmentChange}
+              placeholder="-- Choose Segment --"
+              clearable
               required
-            >
-              <option value="">-- Choose Segment --</option>
-              {segments.map((seg) => <option key={seg.id} value={seg.id}>{seg.name}</option>)}
-            </select>
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Branch</label>
-            <select
-              name="site"
+            <SearchableSelect
+              options={availableBranchOptions}
               value={form.site}
-              onChange={e => setForm({ ...form, site: e.target.value })}
-              className="w-full border border-gray-300 p-2 rounded-md focus:ring-2 focus:ring-primary-500"
+              onChange={handleBranchChange}
+              placeholder={form.segment_id ? "-- Select Branch --" : "-- Select Segment First --"}
+              disabled={!form.segment_id}
+              clearable
               required
-            >
-              <option value="">-- Select Branch --</option>
-              {sites.map((site, i) => <option key={i} value={site}>{site}</option>)}
-            </select>
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Canteen Name</label>

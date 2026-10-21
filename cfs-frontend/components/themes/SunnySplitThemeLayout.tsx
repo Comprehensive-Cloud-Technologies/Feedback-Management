@@ -33,20 +33,20 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
   onSubmit,
 }) => {
   return (
-    <div className="flex-grow min-h-0 flex flex-col md:flex-row overflow-hidden relative w-full bg-[#FFFBEB] font-sans text-slate-900">
+    <div className="flex-grow min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative w-full bg-[#FFFBEB] font-sans text-slate-900">
       {/* LEFT COLUMN: Solid Amber Panel */}
-      <aside className="w-full md:w-[38%] lg:w-[34%] bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 p-4 sm:p-6 md:p-8 flex flex-col justify-between flex-shrink-0 shadow-lg md:shadow-2xl z-10 overflow-y-auto">
+      <aside className="w-full md:w-[38%] lg:w-[34%] bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 p-4 sm:p-6 md:p-8 flex flex-col justify-between flex-shrink-0 shadow-lg md:shadow-2xl z-10 md:overflow-y-auto">
         <div>
           {/* Top Branding Row */}
           <div className="flex items-center justify-between gap-3 mb-6">
-            <div className="bg-white/95 rounded-xl px-3 py-1.5 shadow-sm">
+            <div className="bg-white/95 rounded-xl px-3 py-1.5 shadow-sm flex-shrink-0">
               <img
                 src={catalystLogo}
                 alt="Catalyst"
-                className="h-9 sm:h-11 w-auto object-contain"
+                className="h-9 sm:h-11 w-auto object-contain flex-shrink-0"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <ThemeLogoBadge
                 branchLogo={branchLogo}
                 fallbackLogo={catalystLogo}
@@ -57,7 +57,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                 <button
                   type="button"
                   onClick={toggleFullscreen}
-                  className="p-2 bg-amber-600/60 hover:bg-amber-700 text-white rounded-xl shadow-sm transition-all"
+                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-amber-600/60 hover:bg-amber-700 text-white rounded-xl shadow-sm transition-all cursor-pointer"
                   title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -77,10 +77,10 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
             <span className="inline-block text-[11px] font-black tracking-widest text-amber-950 uppercase bg-amber-300/80 px-2.5 py-1 rounded-full mb-2">
               {texts.badge_text || 'Information:'}
             </span>
-            <h2 className="text-xl sm:text-2xl font-black text-amber-950 leading-tight">
+            <h2 className="text-xl sm:text-2xl font-black text-amber-950 leading-tight break-words">
               Tell us about you
             </h2>
-            <p className="text-amber-950/80 text-xs sm:text-sm font-medium mt-1">
+            <p className="text-amber-950/80 text-xs sm:text-sm font-medium mt-1 break-words">
               Your identity helps us resolve dining feedback quickly.
             </p>
           </div>
@@ -234,19 +234,19 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
       </aside>
 
       {/* RIGHT COLUMN: White Feedback Area */}
-      <section className="flex-grow min-h-0 flex flex-col bg-white overflow-hidden">
+      <section className="flex-grow flex flex-col bg-white overflow-visible md:overflow-hidden md:min-h-0">
         {/* Top Header of Right Column */}
         <div className="px-4 sm:px-8 pt-5 sm:pt-7 pb-3 border-b border-amber-100 flex-shrink-0 bg-white">
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight break-words">
             {texts.title || 'How did we do?'}
           </h1>
-          <p className="text-slate-500 text-xs sm:text-sm font-medium mt-1">
+          <p className="text-slate-500 text-xs sm:text-sm font-medium mt-1 break-words">
             {texts.subtitle || 'Tap a face to rate your dining experience today'}
           </p>
         </div>
 
         {/* Questions Scrollable Body */}
-        <div className="flex-grow min-h-0 overflow-y-auto px-4 sm:px-8 py-4 space-y-4">
+        <div className="flex-grow min-h-0 md:overflow-y-auto px-4 sm:px-8 py-4 space-y-4">
           {questions.map((q, idx) => {
             const val = ratings[q.id];
             const qType = q.response_type || 'smiley_faces';
@@ -272,7 +272,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                     <span className="w-6 h-6 rounded-full bg-amber-400 text-amber-950 font-black text-xs flex items-center justify-center flex-shrink-0">
                       {idx + 1}
                     </span>
-                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-snug">
+                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-snug break-words">
                       {q.question_text || q.text}
                     </h3>
                   </div>
@@ -280,7 +280,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
 
                 {/* Question Options */}
                 {isSmiley && smileyOptions ? (
-                  <div className="flex items-center justify-around sm:justify-start sm:gap-6 py-2">
+                  <div className="flex items-center justify-around sm:justify-start sm:gap-6 py-2 flex-wrap gap-2">
                     {smileyOptions.map((opt: any) => {
                       const isSelected = val !== undefined && val !== null && String(val) === String(opt.value);
                       return (
@@ -288,7 +288,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                           key={opt.value}
                           type="button"
                           onClick={() => onRatingChange(q.id, opt.value)}
-                          className="flex flex-col items-center gap-1.5 group outline-none cursor-pointer"
+                          className="flex flex-col items-center gap-1.5 group outline-none cursor-pointer min-w-[44px] min-h-[44px]"
                         >
                           <div
                             className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-3xl sm:text-4xl transition-all pointer-events-none ${
@@ -344,7 +344,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
             type="button"
             onClick={onSubmit}
             disabled={isSubmitting || !isAllRatingsAnswered}
-            className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-slate-950 font-black text-base sm:text-lg py-3.5 sm:py-4 rounded-2xl shadow-xl shadow-amber-300/60 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-wide"
+            className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-slate-950 font-black text-base sm:text-lg py-3.5 sm:py-4 min-h-[48px] rounded-2xl shadow-xl shadow-amber-300/60 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer"
           >
             {isSubmitting ? (
               <>

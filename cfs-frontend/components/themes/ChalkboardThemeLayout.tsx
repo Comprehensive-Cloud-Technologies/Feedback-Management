@@ -53,10 +53,10 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
               <span className="block text-[10px] sm:text-xs font-serif tracking-[0.25em] text-amber-200/90 uppercase mb-0.5">
                 {texts.badge_text || '★ CATALYST ★'}
               </span>
-              <h1 className="text-base sm:text-xl md:text-2xl font-serif font-black tracking-wide text-[#FFF8E7] truncate">
+              <h1 className="text-base sm:text-xl md:text-2xl font-serif font-black tracking-wide text-[#FFF8E7] break-words">
                 {texts.title || "Today's Feedback Menu"}
               </h1>
-              <p className="text-emerald-200/70 italic text-[10px] sm:text-xs font-serif truncate mt-0.5">
+              <p className="text-emerald-200/70 italic text-[10px] sm:text-xs font-serif break-words mt-0.5">
                 {texts.subtitle || 'Freshly prepared daily'}
               </p>
             </div>
@@ -73,7 +73,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                 <button
                   type="button"
                   onClick={toggleFullscreen}
-                  className="p-1.5 bg-emerald-950 hover:bg-emerald-900 border border-emerald-600/40 text-amber-200 rounded-lg transition-all"
+                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-emerald-950 hover:bg-emerald-900 border border-emerald-600/40 text-amber-200 rounded-lg transition-all cursor-pointer"
                   title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -117,7 +117,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                       <span className="text-amber-200/90 font-serif font-bold text-xs sm:text-sm">
                         {idx + 1}.
                       </span>
-                      <h3 className="font-serif font-bold text-sm sm:text-base text-[#FFF8E7] leading-snug">
+                      <h3 className="font-serif font-bold text-sm sm:text-base text-[#FFF8E7] leading-snug break-words">
                         {q.question_text || q.text}
                       </h3>
                       <div className="border-b border-dotted border-emerald-400/30 flex-grow mx-2 mb-1 hidden sm:block"></div>
@@ -125,7 +125,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
 
                     {/* Right: Square Emoji Buttons */}
                     {isSmiley && smileyOptions ? (
-                      <div className="flex items-center gap-2 flex-shrink-0 justify-start sm:justify-end">
+                      <div className="flex items-center gap-2 flex-wrap flex-shrink-0 justify-start sm:justify-end">
                         {smileyOptions.map((opt: any) => {
                           const isSelected = val !== undefined && val !== null && String(val) === String(opt.value);
                           return (
@@ -133,7 +133,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                               key={opt.value}
                               type="button"
                               onClick={() => onRatingChange(q.id, opt.value)}
-                              className={`flex flex-col items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-lg border transition-all cursor-pointer ${
+                              className={`flex flex-col items-center justify-center min-w-[44px] min-h-[44px] w-11 h-11 sm:w-12 sm:h-12 rounded-lg border transition-all cursor-pointer ${
                                 isSelected
                                   ? 'bg-[#FFF8E7] text-[#14231A] border-[#FFF8E7] shadow-md scale-105 ring-2 ring-amber-200/60'
                                   : 'bg-emerald-950/70 hover:bg-emerald-900 border-emerald-600/40 text-[#FFF8E7]'
@@ -297,7 +297,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
               type="button"
               onClick={onSubmit}
               disabled={isSubmitting || !isAllRatingsAnswered}
-              className="w-full bg-[#FFF8E7] hover:bg-white disabled:opacity-40 disabled:bg-emerald-900 disabled:text-emerald-400 text-[#14231A] font-serif font-black text-sm sm:text-base py-3 sm:py-3.5 rounded-xl shadow-lg border-2 border-amber-200/60 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest"
+              className="w-full bg-[#FFF8E7] hover:bg-white disabled:opacity-40 disabled:bg-emerald-900 disabled:text-emerald-400 text-[#14231A] font-serif font-black text-sm sm:text-base py-3 sm:py-3.5 min-h-[48px] rounded-xl shadow-lg border-2 border-amber-200/60 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest cursor-pointer"
             >
               {isSubmitting ? (
                 <>

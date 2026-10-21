@@ -31,10 +31,31 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
   isAllRatingsAnswered,
   onSubmit,
 }) => {
+  const isBgEnabled = !!formSettings?.bg_image_enabled && !!formSettings?.bg_image_data;
+
   return (
     <div className="flex-grow min-h-0 flex flex-col overflow-hidden relative w-full pt-1">
+      {/* Background Image Layer (Safe iOS viewport cover with subtle contrast overlay) */}
+      {isBgEnabled && (
+        <div
+          className="absolute inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url(${formSettings.bg_image_data})`,
+          }}
+        >
+          {/* Subtle contrast overlay to ensure 100% legibility on any image */}
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-brightness-95 pointer-events-none" />
+        </div>
+      )}
+
       {/* Header / Logo Area - Standardized & Responsive */}
-      <header className="text-center w-full max-w-full py-0.5 flex-shrink-0 bg-white shadow-sm border-b border-gray-100 mb-0.5">
+      <header
+        className={`text-center w-full max-w-full py-0.5 flex-shrink-0 z-10 transition-all ${
+          isBgEnabled
+            ? 'bg-white/40 backdrop-blur-md border-b border-white/30 shadow-sm'
+            : 'bg-white shadow-sm border-b border-gray-100'
+        } mb-0.5`}
+      >
         <div className="flex items-center justify-between px-3 sm:px-6 max-w-7xl mx-auto h-14 sm:h-16 md:h-20 gap-2">
           {/* Left Column - Catalyst Logo */}
           <div className="flex-shrink-0 w-20 sm:w-28 md:w-40 flex justify-start">
@@ -47,10 +68,10 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
 
           {/* Center Column - Text Content */}
           <div className="flex-grow flex flex-col items-center justify-center min-w-0">
-            <h1 className="text-sm sm:text-xl md:text-2xl font-black text-gray-900 leading-tight tracking-tight truncate w-full">
+            <h1 className={`text-sm sm:text-xl md:text-2xl font-black leading-tight tracking-tight break-words text-center w-full ${isBgEnabled ? 'text-gray-900 drop-shadow-xs' : 'text-gray-900'}`}>
               {texts.title || "We value your feedback!"}
             </h1>
-            <p className="text-gray-500 text-[8px] sm:text-xs md:text-sm font-medium italic opacity-80 mt-0.5 truncate w-full">
+            <p className={`text-[8px] sm:text-xs md:text-sm font-semibold italic mt-0.5 break-words text-center w-full ${isBgEnabled ? 'text-gray-800 drop-shadow-xs opacity-90' : 'text-gray-500 opacity-80'}`}>
               {texts.subtitle || "Help us improve your dining experience."}
             </p>
           </div>
@@ -60,13 +81,13 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
             <img
               src={branchLogo || catalystLogo}
               alt="Branch Logo"
-              className="h-11 sm:h-14 md:h-16 w-auto object-contain max-w-[80px] sm:max-w-[110px] md:max-w-[140px]"
+              className="h-11 sm:h-14 md:h-16 w-auto object-contain max-w-[80px] sm:max-w-[110px] md:max-w-[140px] flex-shrink-0"
             />
             {enableFullscreen && (
               <button
                 type="button"
                 onClick={toggleFullscreen}
-                className="flex-shrink-0 p-1.5 sm:p-2 bg-white/50 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-primary-600 transition-all"
+                className="flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center p-2 bg-white/50 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-primary-600 transition-all cursor-pointer"
                 title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -83,7 +104,7 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
       </header>
 
       {/* Center Questions Area - Scrollable & Responsive */}
-      <div className="flex-grow min-h-0 w-full max-w-4xl mx-auto px-2 sm:px-4 py-0.5 flex flex-col overflow-hidden">
+      <div className="flex-grow min-h-0 w-full max-w-4xl mx-auto px-2 sm:px-4 py-0.5 flex flex-col overflow-hidden z-10">
         <div className="flex-grow min-h-0 overflow-y-auto overflow-x-hidden px-1 sm:px-2 scrollbar-hide">
           <div className="flex flex-col gap-1 sm:gap-1.5 py-0.5">
             {questions.map((q) => {
@@ -101,7 +122,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
               return (
                 <div
                   key={q.id}
-                  className={`bg-white rounded-xl ${containerPadding} shadow-sm border border-gray-100 flex flex-col items-center justify-center transition-all hover:shadow-md hover:border-primary-200 flex-shrink-0`}
+                  className={`rounded-xl ${containerPadding} flex flex-col items-center justify-center transition-all flex-shrink-0 ${
+                    isBgEnabled
+                      ? 'bg-white/45 backdrop-blur-md border border-white/40 shadow-md hover:bg-white/55 hover:border-white/60 hover:shadow-lg'
+                      : 'bg-white shadow-sm border border-gray-100 hover:shadow-md hover:border-primary-200'
+                  }`}
                 >
                   <h3 className={`${titleSize} font-bold text-gray-800 mb-0.5 sm:mb-1 text-center leading-snug w-full px-2`}>
                     {q.question_text || q.text}
@@ -142,7 +167,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                       value={userName}
                       onChange={e => setUserName(e.target.value)}
                       placeholder="Your Name"
-                      className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                      className={`w-full px-3 py-2 text-sm rounded-lg transition-all ${
+                        isBgEnabled
+                          ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-900 placeholder:text-gray-600 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                          : 'bg-gray-50 border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder:text-gray-500'
+                      }`}
                     />
                   )}
                   {!!formSettings.field_employee_id && (
@@ -151,7 +180,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                       value={userEmployeeId}
                       onChange={e => setUserEmployeeId(e.target.value)}
                       placeholder="Employee ID"
-                      className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                      className={`w-full px-3 py-2 text-sm rounded-lg transition-all ${
+                        isBgEnabled
+                          ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-900 placeholder:text-gray-600 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                          : 'bg-gray-50 border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder:text-gray-500'
+                      }`}
                     />
                   )}
                   {!!formSettings.field_suggestion && (
@@ -160,7 +193,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                       value={userSuggestion}
                       onChange={e => setUserSuggestion(e.target.value)}
                       placeholder="Your suggestions or comments..."
-                      className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                      className={`w-full px-3 py-2 text-sm rounded-lg transition-all ${
+                        isBgEnabled
+                          ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-900 placeholder:text-gray-600 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                          : 'bg-gray-50 border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder:text-gray-500'
+                      }`}
                     />
                   )}
                   {!!formSettings.field_department && (
@@ -169,7 +206,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                       value={userDepartment}
                       onChange={e => setUserDepartment(e.target.value)}
                       placeholder="Department"
-                      className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                      className={`w-full px-3 py-2 text-sm rounded-lg transition-all ${
+                        isBgEnabled
+                          ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-900 placeholder:text-gray-600 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                          : 'bg-gray-50 border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder:text-gray-500'
+                      }`}
                     />
                   )}
                 </div>
@@ -177,7 +218,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                   <select
                     value={selectedMealSlot}
                     onChange={e => setSelectedMealSlot(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 appearance-none cursor-pointer text-gray-500"
+                    className={`w-full px-3 py-2 text-sm rounded-lg transition-all appearance-none cursor-pointer ${
+                      isBgEnabled
+                        ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-800 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                        : 'bg-gray-50 border border-gray-400 text-gray-500 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500'
+                    }`}
                   >
                     <option value="">Select Meal Slot...</option>
                     {mealSlots.map((slot, idx) => (
@@ -198,14 +243,22 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                               value={customFieldValues[cf.id] || ''}
                               onChange={e => setCustomFieldValues(prev => ({ ...prev, [cf.id]: e.target.value }))}
                               placeholder={`${cf.label}${cf.required ? ' *' : ''}`}
-                              className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 placeholder:text-gray-500"
+                              className={`w-full px-3 py-2 text-sm rounded-lg transition-all ${
+                                isBgEnabled
+                                  ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-900 placeholder:text-gray-600 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                                  : 'bg-gray-50 border border-gray-400 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-primary-500/20'
+                              }`}
                             />
                           )}
                           {cf.type === 'dropdown_single' && (
                             <select
                               value={customFieldValues[cf.id] || ''}
                               onChange={e => setCustomFieldValues(prev => ({ ...prev, [cf.id]: e.target.value }))}
-                              className="w-full px-3 py-2 text-sm border border-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-gray-50 cursor-pointer text-gray-700"
+                              className={`w-full px-3 py-2 text-sm rounded-lg transition-all cursor-pointer ${
+                                isBgEnabled
+                                  ? 'bg-white/65 backdrop-blur-sm border border-white/60 text-gray-800 focus:bg-white/85 focus:ring-2 focus:ring-primary-500/30 shadow-xs'
+                                  : 'bg-gray-50 border border-gray-400 text-gray-700 focus:bg-white focus:ring-2 focus:ring-primary-500/20'
+                              }`}
                             >
                               <option value="">{`Select ${cf.label}${cf.required ? ' *' : ''}...`}</option>
                               {(cf.options || []).map((opt, optIdx) => (
@@ -214,7 +267,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                             </select>
                           )}
                           {cf.type === 'dropdown_multi' && (
-                            <div className="p-2 bg-gray-50 border border-gray-400 rounded-lg">
+                            <div className={`p-2 rounded-lg transition-all ${
+                              isBgEnabled
+                                ? 'bg-white/50 backdrop-blur-sm border border-white/50 shadow-xs'
+                                : 'bg-gray-50 border border-gray-400'
+                            }`}>
                               <label className="text-xs font-semibold text-gray-600 block mb-1">
                                 {cf.label}{cf.required ? ' *' : ''} <span className="text-[10px] text-gray-400">(multi-select)</span>
                               </label>
@@ -266,7 +323,7 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
               type="button"
               onClick={onSubmit}
               disabled={isSubmitting || !isAllRatingsAnswered}
-              className="w-full flex-shrink-0 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm sm:text-base py-2.5 sm:py-4 rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1 mb-2"
+              className="w-full flex-shrink-0 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm sm:text-base py-3 sm:py-4 min-h-[48px] rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-1 mb-2 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

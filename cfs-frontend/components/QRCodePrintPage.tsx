@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import QRCode from 'react-qr-code';
 import { getEndpoints, FRONTEND_URL, API_URL } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { FaPrint } from 'react-icons/fa';
-import { SearchInput, matchesSearch } from './SearchInput';
+import { SearchableSelect } from './SearchableSelect';
 import catalystLogo from '../src/images/clogo.png';
 import qrCardBg from '../src/images/cartimg.png';
 
@@ -36,7 +36,6 @@ const QRCodePrintPage: React.FC = () => {
   const endpoints = getEndpoints();
   const [sites, setSites] = useState<SiteData[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('All Branches');
-  const [searchQuery, setSearchQuery] = useState('');
   const [modalData, setModalData] = useState<{ site: string, canteen?: string, title: string, logo?: string } | null>(null);
 
   // We'll use a dedicated print window to avoid issues with modal transforms
@@ -343,24 +342,16 @@ const QRCodePrintPage: React.FC = () => {
     fetchData();
   }, []);
 
-  const filteredSites = sites
-    .filter(site => selectedBranch === 'All Branches' || site.location === selectedBranch)
-    .map(site => {
-      if (site.canteens && site.canteens.length > 0) {
-        const matchingCanteens = site.canteens.filter(canteen =>
-          matchesSearch(searchQuery, [site.location, canteen])
-        );
-        return { ...site, canteens: matchingCanteens };
-      } else {
-        const matches = matchesSearch(searchQuery, [site.location]);
-        return matches ? site : null;
-      }
-    })
-    .filter((site): site is SiteData => {
-      if (!site) return false;
-      if (site.canteens && site.canteens.length === 0) return false;
-      return true;
-    });
+  const branchOptions = useMemo(() => {
+    return [
+      { value: 'All Branches', label: 'All Sites / Branches' },
+      ...sites.map(site => ({ value: site.location, label: site.location }))
+    ];
+  }, [sites]);
+
+  const filteredSites = sites.filter(
+    site => selectedBranch === 'All Branches' || site.location === selectedBranch
+  );
 
   const totalQRsCount = filteredSites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0);
   const allQRsCount = sites.reduce((acc, s) => acc + (s.canteens?.length || 1), 0);
@@ -377,7 +368,7 @@ const QRCodePrintPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="text-right mr-4 no-print">
               <div className="text-white font-bold text-lg leading-none">
-                {searchQuery.trim() || selectedBranch !== 'All Branches'
+                {selectedBranch !== 'All Branches'
                   ? `${totalQRsCount} / ${allQRsCount}`
                   : totalQRsCount}
               </div>
@@ -407,32 +398,19 @@ const QRCodePrintPage: React.FC = () => {
 
         {/* Branch Filter Bar */}
         <div className="flex flex-wrap items-center gap-4 mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100 no-print">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 min-w-[260px]">
             <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Filter by Branch / Site</label>
-            <select
+            <SearchableSelect
+              options={branchOptions}
               value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all min-w-[240px]"
-            >
-              <option value="All Branches">All Sites / Branches</option>
-              {sites.map((site: SiteData) => (
-                <option key={site.location} value={site.location}>{site.location}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1 w-full sm:w-auto">
-            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Search QRs</label>
-            <SearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search branch or canteen..."
-              className="w-full sm:w-72"
+              onChange={(val) => setSelectedBranch(val || 'All Branches')}
+              placeholder="Select Branch / Site"
+              clearable={false}
             />
           </div>
 
           <div className="sm:ml-auto text-xs font-bold text-gray-400 self-end mb-2">
-            {searchQuery.trim() || selectedBranch !== 'All Branches'
+            {selectedBranch !== 'All Branches'
               ? `Showing ${totalQRsCount} of ${allQRsCount} QRs`
               : `Total: ${totalQRsCount} QRs`}
           </div>

@@ -121,7 +121,7 @@ export const CustomQuestionRenderer: React.FC<CustomQuestionProps> = ({ question
         maxLabel: 'Excellent',
         symbol: 'number'
       };
-      return <ScaleRenderer customization={defaultCustomization} value={value} onChange={onChange} />;
+      return <ScaleRenderer customization={defaultCustomization} value={value} onChange={onChange} questionCount={questionCount} />;
     } else if (responseType === 'yes_no') {
       const defaultCustomization: YesNoCustomization = {
         type: 'yes_no',
@@ -163,7 +163,7 @@ export const CustomQuestionRenderer: React.FC<CustomQuestionProps> = ({ question
     return <StarRatingRenderer customization={customization} value={value} onChange={onChange} />;
   }
   if (customization.type === 'scale' || responseType === 'scale') {
-    return <ScaleRenderer customization={customization} value={value} onChange={onChange} />;
+    return <ScaleRenderer customization={customization} value={value} onChange={onChange} questionCount={questionCount} />;
   }
   if (customization.type === 'yes_no' || responseType === 'yes_no') {
     return <YesNoRenderer customization={customization} value={value} onChange={onChange} />;
@@ -202,56 +202,58 @@ const SmileyFaceRenderer: React.FC<{
   questionCount?: number;
 }> = ({ customization, value, onChange, questionCount = 3 }) => {
   const options = customization.options || [];
-  const optionCount = options.length;
 
-  const getSizeClasses = () => {
-    if (questionCount === 1) {
-      if (optionCount <= 2) return { btn: 'w-24 h-24 sm:w-28 sm:h-28 text-5xl sm:text-6xl', font: 'text-base sm:text-lg', gap: 'gap-8 sm:gap-12' };
-      if (optionCount <= 3) return { btn: 'w-20 h-20 sm:w-24 sm:h-24 text-4xl sm:text-5xl', font: 'text-sm sm:text-base', gap: 'gap-6 sm:gap-8' };
-      if (optionCount <= 4) return { btn: 'w-18 h-18 sm:w-22 sm:h-22 text-4xl sm:text-5xl', font: 'text-sm sm:text-base', gap: 'gap-4 sm:gap-6' };
-      return { btn: 'w-16 h-16 sm:w-20 sm:h-20 text-3xl sm:text-4xl', font: 'text-xs sm:text-sm', gap: 'gap-3 sm:gap-4' };
-    }
-    if (questionCount === 2) {
-      if (optionCount <= 3) return { btn: 'w-16 h-16 sm:w-20 sm:h-20 text-3xl sm:text-4xl', font: 'text-xs sm:text-sm', gap: 'gap-4 sm:gap-6' };
-      return { btn: 'w-14 h-14 sm:w-16 sm:h-16 text-2xl sm:text-3xl', font: 'text-xs sm:text-sm', gap: 'gap-3 sm:gap-4' };
-    }
-    if (optionCount <= 3) return { btn: 'w-14 h-14 sm:w-16 sm:h-16 text-2xl sm:text-3xl', font: 'text-xs sm:text-sm', gap: 'gap-3 sm:gap-4' };
-    if (optionCount <= 4) return { btn: 'w-12 h-12 sm:w-14 sm:h-14 text-xl sm:text-2xl', font: 'text-[11px] sm:text-xs', gap: 'gap-2 sm:gap-3' };
-    return { btn: 'w-10 h-10 sm:w-12 sm:h-12 text-lg sm:text-xl', font: 'text-[10px] sm:text-[11px]', gap: 'gap-1.5 sm:gap-2' };
-  };
+  // Viewport-aware & question-count responsive sizing
+  const emojiSize =
+    questionCount <= 2 ? 'clamp(2.5rem, 5vh, 3.5rem)' :
+      questionCount <= 3 ? 'clamp(2rem, 4vh, 2.8rem)' :
+        questionCount <= 4 ? 'clamp(1.6rem, 3vh, 2.2rem)' : 'clamp(1.4rem, 2.5vh, 1.8rem)';
 
-  const sizes = getSizeClasses();
+  const activeEmojiSize =
+    questionCount <= 2 ? 'clamp(2.8rem, 5.5vh, 4rem)' :
+      questionCount <= 3 ? 'clamp(2.2rem, 4.5vh, 3.2rem)' :
+        questionCount <= 4 ? 'clamp(1.8rem, 3.5vh, 2.6rem)' : 'clamp(1.6rem, 3vh, 2.2rem)';
+
+  const labelSize =
+    questionCount <= 2 ? 'text-sm' :
+      questionCount <= 4 ? 'text-[10px] sm:text-xs' : 'text-[9px] sm:text-[10px]';
+
+  const containerPadding =
+    questionCount <= 3 ? 'py-2 sm:py-4' :
+      questionCount <= 5 ? 'py-1 sm:py-2' : 'py-0';
 
   return (
-    <div className={`flex justify-center items-center ${sizes.gap} py-2 sm:py-3 w-full px-2`}>
-      {options.map(opt => {
-        const isSelected = value === opt.value;
+    <div className={`flex items-center justify-center gap-4 sm:gap-6 ${containerPadding} w-full px-2`}>
+      {options.map((option) => {
+        const isSelected = value !== undefined && value !== null && String(value) === String(option.value);
         return (
           <button
-            key={opt.value}
+            key={option.value}
             type="button"
-            onClick={() => onChange(opt.value)}
-            className={`flex flex-col items-center gap-1 sm:gap-2 transition-all transform active:scale-95 focus:outline-none flex-1 max-w-[80px] sm:max-w-[100px] group`}
+            onClick={() => onChange(option.value)}
+            className={`flex flex-col items-center justify-center transition-all duration-300 transform min-w-[50px] sm:min-w-[80px] min-h-[44px] cursor-pointer focus:outline-none ${
+              isSelected ? 'scale-110 z-10' : value ? 'opacity-70 hover:opacity-100 hover:scale-105' : 'hover:scale-110'
+            }`}
           >
             <div
-              style={{
-                backgroundColor: isSelected ? opt.color : '#f3f4f6',
-                boxShadow: isSelected ? `0 8px 20px -4px ${opt.color}80` : undefined
-              }}
-              className={`${sizes.btn} rounded-2xl flex items-center justify-center transition-all ${
-                isSelected
-                  ? 'scale-110 shadow-lg text-white ring-4 ring-offset-2 ring-primary-400'
-                  : 'hover:scale-105 opacity-80 hover:opacity-100 hover:bg-gray-200'
+              className={`flex items-center justify-center transition-all duration-300 ${
+                isSelected ? 'drop-shadow-[0_0_15px_rgba(34,197,94,0.4)]' : ''
               }`}
             >
-              <span className="select-none filter drop-shadow-sm">{opt.emoji}</span>
+              <span
+                className="select-none transition-all duration-300 filter drop-shadow-xs"
+                style={{ fontSize: isSelected ? activeEmojiSize : emojiSize }}
+              >
+                {option.emoji}
+              </span>
             </div>
             <span
-              className={`${sizes.font} font-bold text-center leading-tight transition-colors line-clamp-2 px-0.5 ${
-                isSelected ? 'text-primary-700' : 'text-gray-500 group-hover:text-gray-700'
-              }`}
+              className={`mt-1 font-black transition-colors ${labelSize} text-center leading-none`}
+              style={{
+                color: isSelected ? (option.color || '#22c55e') : '#6b7280'
+              }}
             >
-              {opt.label}
+              {option.label}
             </span>
           </button>
         );
@@ -282,7 +284,7 @@ const StarRatingRenderer: React.FC<{
               onClick={() => onChange(star)}
               onMouseEnter={() => setHoveredStar(star)}
               onMouseLeave={() => setHoveredStar(null)}
-              className="text-4xl sm:text-5xl transition-transform hover:scale-110 active:scale-95 focus:outline-none"
+              className="text-4xl sm:text-5xl transition-transform hover:scale-110 active:scale-95 focus:outline-none min-w-[44px] min-h-[44px] flex items-center justify-center p-1 cursor-pointer"
             >
               <span className={isFilled ? 'text-yellow-400 drop-shadow-md' : 'text-gray-300'}>
                 ★
@@ -305,35 +307,75 @@ const ScaleRenderer: React.FC<{
   customization: ScaleCustomization;
   value?: number | string;
   onChange: (value: number | string) => void;
-}> = ({ customization, value, onChange }) => {
+  questionCount?: number;
+}> = ({ customization, value, onChange, questionCount = 3 }) => {
   const min = customization.minValue || 1;
   const max = customization.maxValue || 10;
-  const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+  const currentVal = value !== undefined && value !== null && !isNaN(Number(value)) ? Number(value) : min;
+
+  // Calculate percentage for pointer
+  const range = max - min || 1;
+  const percent = Math.max(0, Math.min(100, ((currentVal - min) / range) * 100));
+
+  // Dynamic sizing based on question count
+  const containerPadding = questionCount <= 3 ? 'py-8' : questionCount <= 5 ? 'py-4' : 'py-2';
+  const barHeight = questionCount <= 3 ? 'h-12' : questionCount <= 5 ? 'h-10' : 'h-8';
+  const fontSize = questionCount <= 3 ? 'text-base' : questionCount <= 5 ? 'text-sm' : 'text-xs';
+  const triangleTop = questionCount <= 3 ? '-top-12' : questionCount <= 5 ? '-top-10' : '-top-8';
 
   return (
-    <div className="w-full max-w-xl mx-auto py-3">
-      <div className="flex justify-between text-xs sm:text-sm font-bold text-gray-500 mb-2 px-1">
-        <span>{customization.minLabel}</span>
-        <span>{customization.maxLabel}</span>
-      </div>
-      <div className="flex justify-between gap-1 sm:gap-2">
-        {numbers.map(num => {
-          const isSelected = Number(value) === num;
-          return (
-            <button
+    <div className={`w-full max-w-2xl mx-auto px-4 ${containerPadding}`}>
+      <div className="relative mb-6">
+        {/* Triangle Pointer */}
+        <div
+          className={`absolute ${triangleTop} transition-all duration-300 ease-out transform -translate-x-1/2 flex flex-col items-center z-20 pointer-events-none`}
+          style={{ left: `${percent}%` }}
+        >
+          <div className="bg-gray-800 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-lg mb-0.5">
+            {currentVal}
+          </div>
+          <div className="w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-t-[14px] border-t-gray-800 drop-shadow-md" />
+        </div>
+
+        {/* Gradient Bar with Numbers */}
+        <div className={`relative ${barHeight} bg-gradient-to-r from-[#ef4444] via-[#facc15] to-[#22c55e] rounded-2xl shadow-inner flex items-center justify-between px-2 overflow-visible`}>
+          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((num) => (
+            <div
               key={num}
-              type="button"
               onClick={() => onChange(num)}
-              className={`flex-1 py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${
-                isSelected
-                  ? 'bg-primary-600 text-white shadow-md shadow-primary-200 scale-105 ring-2 ring-primary-400'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              className={`flex-1 text-center transition-all duration-300 select-none cursor-pointer z-10 ${
+                currentVal === num ? `font-black ${fontSize} text-white drop-shadow-lg scale-125` : `font-bold ${fontSize} text-white/50`
               }`}
             >
               {num}
-            </button>
-          );
-        })}
+            </div>
+          ))}
+
+          {/* Invisible Overlay for Range Input to maintain accessibility and touch sliding */}
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={1}
+            value={currentVal}
+            onChange={(e) => onChange(Number(e.target.value))}
+            aria-label="Rating scale"
+            className="absolute -top-12 bottom-0 left-0 right-0 w-full opacity-0 cursor-grab active:cursor-grabbing z-30"
+            style={{ WebkitAppearance: 'none', touchAction: 'pan-y' }}
+          />
+        </div>
+
+        {/* Helper Labels */}
+        <div className="flex justify-between mt-6 px-1">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Minimum</span>
+            <span className="text-xs font-bold text-gray-600">{customization.minLabel || min}</span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Maximum</span>
+            <span className="text-xs font-bold text-gray-600">{customization.maxLabel || max}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -359,7 +401,7 @@ const YesNoRenderer: React.FC<{
           backgroundColor: value === 'yes' ? yesColor : '#f3f4f6',
           color: value === 'yes' ? 'white' : '#374151'
         }}
-        className={`px-8 py-3 rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center gap-2 ${
+        className={`px-8 py-3 min-h-[48px] min-w-[110px] rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center justify-center gap-2 cursor-pointer ${
           value === 'yes' ? 'shadow-lg scale-105' : 'hover:bg-gray-200'
         }`}
       >
@@ -372,7 +414,7 @@ const YesNoRenderer: React.FC<{
           backgroundColor: value === 'no' ? noColor : '#f3f4f6',
           color: value === 'no' ? 'white' : '#374151'
         }}
-        className={`px-8 py-3 rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center gap-2 ${
+        className={`px-8 py-3 min-h-[48px] min-w-[110px] rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center justify-center gap-2 cursor-pointer ${
           value === 'no' ? 'shadow-lg scale-105' : 'hover:bg-gray-200'
         }`}
       >
@@ -494,7 +536,7 @@ const DropdownMultiRenderer: React.FC<{
               key={idx}
               type="button"
               onClick={() => handleToggle(opt)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border flex items-center gap-1.5 active:scale-95 ${
+              className={`px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold transition-all border flex items-center gap-1.5 active:scale-95 cursor-pointer ${
                 isSelected
                   ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400 hover:bg-gray-50'

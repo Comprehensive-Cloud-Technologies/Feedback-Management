@@ -48,16 +48,16 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
 
           {/* Center Titles */}
           <div className="text-center min-w-0 flex-grow px-2">
-            <h1 className="text-base sm:text-xl md:text-2xl font-black text-white tracking-tight truncate">
+            <h1 className="text-base sm:text-xl md:text-2xl font-black text-white tracking-tight break-words">
               {texts.title || 'Dining Experience'}
             </h1>
-            <p className="text-slate-400 text-[10px] sm:text-xs font-medium truncate mt-0.5">
+            <p className="text-slate-400 text-[10px] sm:text-xs font-medium break-words mt-0.5">
               {texts.subtitle || 'Rate each service'}
             </p>
           </div>
 
           {/* Right: Site Logo & Fullscreen */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <ThemeLogoBadge
               branchLogo={branchLogo}
               fallbackLogo={catalystLogo}
@@ -68,7 +68,7 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
               <button
                 type="button"
                 onClick={toggleFullscreen}
-                className="p-1.5 sm:p-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl transition-all"
+                className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl transition-all cursor-pointer"
                 title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -106,18 +106,18 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
                 className="bg-[#131B2E] border border-slate-800 hover:border-slate-700 rounded-2xl p-4 sm:p-5 shadow-lg transition-all"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-                  <div className="flex items-start gap-2.5 sm:max-w-[45%]">
+                  <div className="flex items-start gap-2.5 flex-grow min-w-0">
                     <span className="w-6 h-6 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 font-extrabold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
                       {idx + 1}
                     </span>
-                    <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
+                    <h3 className="text-sm sm:text-base font-bold text-white leading-snug break-words">
                       {q.question_text || q.text}
                     </h3>
                   </div>
 
                   {/* Horizontal Tiles with Neon Green Glow on Select */}
                   {isSmiley && smileyOptions ? (
-                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-start sm:justify-end">
+                    <div className="flex items-center gap-2 flex-wrap justify-start sm:justify-end flex-shrink-0">
                       {smileyOptions.map((opt: any) => {
                         const isSelected = val !== undefined && val !== null && String(val) === String(opt.value);
                         return (
@@ -125,7 +125,7 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
                             key={opt.value}
                             type="button"
                             onClick={() => onRatingChange(q.id, opt.value)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex items-center gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                               isSelected
                                 ? 'bg-emerald-950/70 border-emerald-400 text-emerald-300 ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
                                 : 'bg-[#1B253D] hover:bg-[#223050] border-slate-700/80 text-slate-300'
@@ -287,7 +287,7 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
             type="button"
             onClick={onSubmit}
             disabled={isSubmitting || !isAllRatingsAnswered}
-            className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-black text-sm sm:text-base py-3.5 sm:py-4 rounded-xl shadow-lg shadow-cyan-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-wide"
+            className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-black text-sm sm:text-base py-3.5 sm:py-4 min-h-[48px] rounded-xl shadow-lg shadow-cyan-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer"
           >
             {isSubmitting ? (
               <>

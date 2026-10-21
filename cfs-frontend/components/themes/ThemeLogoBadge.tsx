@@ -19,11 +19,11 @@ export const ThemeLogoBadge: React.FC<ThemeLogoBadgeProps> = ({
 
   if (contrastChip && branchLogo) {
     return (
-      <div className="bg-white/95 backdrop-blur-sm rounded-xl px-2.5 py-1 shadow-sm flex items-center justify-center border border-white/40">
+      <div className="bg-white/95 backdrop-blur-sm rounded-xl px-2.5 py-1 shadow-sm flex items-center justify-center border border-white/40 flex-shrink-0">
         <img
           src={logoSrc}
           alt={alt}
-          className={className}
+          className={`${className} flex-shrink-0`}
         />
       </div>
     );
@@ -33,7 +33,7 @@ export const ThemeLogoBadge: React.FC<ThemeLogoBadgeProps> = ({
     <img
       src={logoSrc}
       alt={alt}
-      className={className}
+      className={`${className} flex-shrink-0`}
     />
   );
 };
