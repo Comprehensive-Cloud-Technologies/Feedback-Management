@@ -48,6 +48,8 @@ $routes = [
     '/admin/qr-codes' => 'api/qr-codes/index.php',
     '/resolve-link' => 'api/resolve-link/index.php',
     '/form-settings' => 'api/form-settings/index.php',
+    '/segments' => 'api/segments/index.php',
+    '/admin/segments' => 'api/segments/index.php',
 ];
 
 $routeKey = preg_replace('#^/api#', '', $uri);

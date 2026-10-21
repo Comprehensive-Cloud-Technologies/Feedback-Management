@@ -13,7 +13,7 @@ if (isset($_SERVER['HTTP_ORIGIN'])) {
 }
 
 // Access-Control headers are received during OPTIONS requests
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD']))
         header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
 
@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 }
 
 // Explicitly allow headers for non-OPTIONS requests
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Cache-Control, x-token, X-Token");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
+if (isset($_SERVER['REQUEST_METHOD'])) {
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Cache-Control, x-token, X-Token");
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
+}
 ?>
