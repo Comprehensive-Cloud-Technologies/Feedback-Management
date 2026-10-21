@@ -773,15 +773,15 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 {/* Question Rating Analysis (Bar Chart) */}
-                                <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100">
+                                <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col">
                                     <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                                         <span className="text-secondary-500">📊</span> Question Rating Analysis
                                     </h3>
-                                    <div className="h-[400px]">
+                                    <div className="w-full min-h-[350px] flex-1 flex flex-col justify-center">
                                         {analytics.averageChartData.length > 0 ? (
                                             <AverageRatingChart data={analytics.averageChartData} />
                                         ) : (
-                                            <div className="h-full flex items-center justify-center text-gray-400 font-medium italic">No chart data available for current filters</div>
+                                            <div className="h-[320px] flex items-center justify-center text-gray-400 font-medium italic">No chart data available for current filters</div>
                                         )}
                                     </div>
                                 </div>

@@ -1112,9 +1112,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
               {/* Rating Distribution Chart (Switched to AverageRatingChart per user request) */}
               {questionAnalysis.averageChartData && questionAnalysis.averageChartData.length > 0 && (
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col">
                   <h3 className="text-xl font-bold text-gray-800 mb-6">Question Rating Analysis</h3>
-                  <div className="h-[400px]">
+                  <div className="w-full min-h-[350px] flex-1 flex flex-col justify-center">
                     <AverageRatingChart
                       data={questionAnalysis.averageChartData}
                     />
