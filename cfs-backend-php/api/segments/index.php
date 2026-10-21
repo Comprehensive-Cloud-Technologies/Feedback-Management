@@ -31,10 +31,12 @@ try {
             }
             break;
         case 'DELETE':
-            if ($action === 'delete' && $id) {
-                handleDelete($id);
+            $input = json_decode(file_get_contents('php://input'), true) ?? [];
+            $deleteId = $id ?? $input['id'] ?? null;
+            if ($deleteId) {
+                handleDelete($deleteId);
             } else {
-                Response::error('Invalid action', 400);
+                Response::error('Invalid action or missing ID', 400);
             }
             break;
         default:
@@ -240,28 +242,67 @@ function handleDelete($id)
         $id = intval($id);
         
         // Check if segment exists
-        $segment = Database::fetchOne('SELECT id FROM segments WHERE id = ?', [$id]);
+        $segment = Database::fetchOne('SELECT id, name FROM segments WHERE id = ?', [$id]);
         if (!$segment) {
             Response::error('Segment not found', 404);
             return;
         }
         
-        // Check if segment has any branches
-        $branchCount = Database::fetchOne(
-            'SELECT COUNT(*) as count FROM sites WHERE segment_id = ?',
-            [$id]
-        );
+        // Check for any dependent records across all related tables
+        $reasons = [];
         
-        if ($branchCount && $branchCount['count'] > 0) {
+        // 1. Branches / Sites
+        $branchCount = Database::fetchOne('SELECT COUNT(*) as count FROM branches WHERE segment_id = ?', [$id]);
+        $bCount = $branchCount ? intval($branchCount['count']) : 0;
+        
+        $siteCount = Database::fetchOne('SELECT COUNT(*) as count FROM sites WHERE segment_id = ?', [$id]);
+        $sCount = $siteCount ? intval($siteCount['count']) : 0;
+        $totalBranches = max($bCount, $sCount);
+        if ($totalBranches > 0) {
+            $reasons[] = "{$totalBranches} branch(es)";
+        }
+
+        // 2. Canteens linked via branches/sites
+        $canteenCount = Database::fetchOne(
+            'SELECT COUNT(*) as count FROM canteens WHERE branch_id IN (SELECT id FROM branches WHERE segment_id = ?) OR site IN (SELECT location FROM sites WHERE segment_id = ?)',
+            [$id, $id]
+        );
+        $cCount = $canteenCount ? intval($canteenCount['count']) : 0;
+        if ($cCount > 0) {
+            $reasons[] = "{$cCount} canteen(s)";
+        }
+        
+        // 3. Questions
+        $questionCount = Database::fetchOne('SELECT COUNT(*) as count FROM questions WHERE segment_id = ?', [$id]);
+        $qCount = $questionCount ? intval($questionCount['count']) : 0;
+        if ($qCount > 0) {
+            $reasons[] = "{$qCount} question(s)";
+        }
+        
+        // 4. Feedback
+        $feedbackCount = Database::fetchOne('SELECT COUNT(*) as count FROM feedback WHERE segment_id = ?', [$id]);
+        $fCount = $feedbackCount ? intval($feedbackCount['count']) : 0;
+        if ($fCount > 0) {
+            $reasons[] = "{$fCount} feedback response(s)";
+        }
+        
+        if (!empty($reasons)) {
+            $details = implode(', ', $reasons);
             Response::error(
-                'Cannot delete segment with associated branches or canteens',
+                "Cannot delete segment '{$segment['name']}': {$details} are linked. Please reassign or remove them first.",
                 409,
-                ['count' => $branchCount['count']]
+                [
+                    'branches' => $totalBranches,
+                    'canteens' => $cCount,
+                    'questions' => $qCount,
+                    'feedback' => $fCount,
+                    'dependencies' => $reasons
+                ]
             );
             return;
         }
         
-        // Delete segment
+        // Delete segment safely
         Database::execute('DELETE FROM segments WHERE id = ?', [$id]);
         
         Response::success(['message' => 'Segment deleted successfully'], 200);
