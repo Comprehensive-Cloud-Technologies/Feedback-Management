@@ -212,8 +212,31 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
         <label className="block text-xs font-black uppercase text-indigo-700 tracking-wider mb-3">
           Select Form Theme
         </label>
+
+        {/* Read-only Current (legacy) notice if current canteen has a retired theme */}
+        {currentThemeDef.isLegacy && (
+          <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-900 tracking-wider">
+                  Current (legacy)
+                </span>
+                <h4 className="text-sm font-extrabold text-amber-950">
+                  {currentThemeDef.name}
+                </h4>
+              </div>
+              <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                This canteen is currently saved with a retired legacy theme. It will continue rendering normally on the public form. You may select any active theme below to upgrade (once switched and saved, legacy themes cannot be reselected).
+              </p>
+            </div>
+            <div className="px-3 py-1.5 bg-amber-200/70 text-amber-950 rounded-xl text-xs font-bold whitespace-nowrap self-start sm:self-auto">
+              Read-only
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          {THEME_LIST.map((t) => {
+          {THEME_LIST.filter(t => !t.isLegacy).map((t) => {
             const isSelected = currentThemeId === t.id;
             return (
               <div
@@ -336,6 +359,41 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
             <p className="text-[10px] text-gray-400 mt-1">Default: "{currentThemeDef.defaultTexts.badge_text || 'None'}"</p>
           </div>
 
+          {/* Sunny Split Heading and Subheading customization */}
+          {currentThemeId === 'sunny_split' && (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Heading (Identity Panel)
+                </label>
+                <input
+                  type="text"
+                  value={currentCustomTexts.heading || ''}
+                  onChange={e => handleTextChange('heading', e.target.value)}
+                  placeholder={currentThemeDef.defaultTexts.heading || 'Tell us about you'}
+                  maxLength={120}
+                  className="w-full px-3.5 py-2 text-xs border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none placeholder:text-gray-400 font-medium"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Default: "{currentThemeDef.defaultTexts.heading || 'Tell us about you'}"</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Subheading (Identity Panel)
+                </label>
+                <input
+                  type="text"
+                  value={currentCustomTexts.subheading || ''}
+                  onChange={e => handleTextChange('subheading', e.target.value)}
+                  placeholder={currentThemeDef.defaultTexts.subheading || 'Your identity helps us resolve dining feedback quickly.'}
+                  maxLength={250}
+                  className="w-full px-3.5 py-2 text-xs border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none placeholder:text-gray-400 font-medium"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Default: "{currentThemeDef.defaultTexts.subheading || 'Your identity helps us resolve dining feedback quickly.'}"</p>
+              </div>
+            </>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
               Submit Button Text
@@ -352,14 +410,14 @@ export const ThemeManagerSection: React.FC<ThemeManagerSectionProps> = ({
         </div>
       </div>
 
-      {/* 2b. Default Theme Background Image & Glassmorphism Customization */}
-      {currentThemeId === 'default' && (
+      {/* 2b. Default & White Theme Background Image & Glassmorphism Customization */}
+      {(currentThemeId === 'default' || currentThemeId === 'white_theme') && (
         <div className="bg-white rounded-2xl p-5 border border-indigo-100 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
             <div>
               <h4 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
                 <span className="text-indigo-600 flex items-center justify-center"><FaImage size={15} /></span>
-                Background Image & Glassmorphism (Default Theme Only)
+                Background Image & Glassmorphism ({currentThemeDef.name})
               </h4>
               <p className="text-xs text-gray-500 mt-0.5">
                 Upload an image to display as the full-viewport cover behind the form with modern glassmorphism.

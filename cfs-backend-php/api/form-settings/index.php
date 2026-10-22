@@ -267,7 +267,7 @@ function handlePut()
     }
 
     // Validate theme_id against whitelist
-    $allowedThemes = ['default', 'sunny_split', 'navy_split', 'midnight_dark', 'chalkboard_menu'];
+    $allowedThemes = ['default', 'sunny_split', 'navy_split', 'midnight_dark', 'chalkboard_menu', 'white_theme'];
     if (isset($data['theme_id'])) {
         $themeId = in_array(strval($data['theme_id']), $allowedThemes, true) ? strval($data['theme_id']) : 'default';
     } else {
@@ -291,6 +291,12 @@ function handlePut()
             }
             if (isset($raw['submit_text'])) {
                 $cleanTexts['submit_text'] = mb_substr(trim(strip_tags(strval($raw['submit_text']))), 0, 50);
+            }
+            if (isset($raw['heading'])) {
+                $cleanTexts['heading'] = mb_substr(trim(strip_tags(strval($raw['heading']))), 0, 120);
+            }
+            if (isset($raw['subheading'])) {
+                $cleanTexts['subheading'] = mb_substr(trim(strip_tags(strval($raw['subheading']))), 0, 250);
             }
             if (!empty($cleanTexts)) {
                 $themeCustomTextsJson = json_encode($cleanTexts, JSON_UNESCAPED_UNICODE);

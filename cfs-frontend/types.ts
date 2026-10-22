@@ -40,13 +40,15 @@ export interface CustomFieldDefinition {
   order: number;
 }
 
-export type ThemeId = 'default' | 'sunny_split' | 'navy_split' | 'midnight_dark' | 'chalkboard_menu';
+export type ThemeId = 'default' | 'sunny_split' | 'navy_split' | 'midnight_dark' | 'chalkboard_menu' | 'white_theme';
 
 export interface ThemeCustomTexts {
   title?: string;
   subtitle?: string;
   badge_text?: string;
   submit_text?: string;
+  heading?: string;
+  subheading?: string;
 }
 
 export interface ResolvedThemeTexts {
@@ -54,6 +56,8 @@ export interface ResolvedThemeTexts {
   subtitle: string;
   badge_text: string;
   submit_text: string;
+  heading?: string;
+  subheading?: string;
 }
 
 export interface FormSettings {

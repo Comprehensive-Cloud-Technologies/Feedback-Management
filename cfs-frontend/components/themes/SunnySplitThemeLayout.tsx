@@ -37,27 +37,30 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
       {/* LEFT COLUMN: Solid Amber Panel */}
       <aside className="w-full md:w-[38%] lg:w-[34%] bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 p-4 sm:p-6 md:p-8 flex flex-col justify-between flex-shrink-0 shadow-lg md:shadow-2xl z-10 md:overflow-y-auto">
         <div>
-          {/* Top Branding Row */}
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <div className="bg-white/95 rounded-xl px-3 py-1.5 shadow-sm flex-shrink-0">
+          {/* Top Branding Row (Stacked & Balanced for Mobile, Preserved on Desktop) */}
+          <div className="flex items-center justify-between gap-3 mb-5 sm:mb-6">
+            <div className="bg-white/95 rounded-xl px-2.5 py-1.5 shadow-sm flex items-center justify-center max-w-[130px] max-h-[48px] flex-shrink-0">
               <img
                 src={catalystLogo}
                 alt="Catalyst"
-                className="h-9 sm:h-11 w-auto object-contain flex-shrink-0"
+                className="max-h-[34px] sm:max-h-[44px] max-w-[110px] w-auto h-auto object-contain flex-shrink-0"
               />
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <ThemeLogoBadge
-                branchLogo={branchLogo}
-                fallbackLogo={catalystLogo}
-                contrastChip={true}
-                className="h-9 sm:h-11 w-auto object-contain max-w-[100px]"
-              />
+              {branchLogo ? (
+                <div className="bg-white/95 rounded-xl px-2.5 py-1.5 shadow-sm flex items-center justify-center max-w-[130px] max-h-[48px] flex-shrink-0">
+                  <img
+                    src={branchLogo}
+                    alt="Site Logo"
+                    className="max-h-[34px] sm:max-h-[44px] max-w-[110px] w-auto h-auto object-contain flex-shrink-0"
+                  />
+                </div>
+              ) : null}
               {enableFullscreen && (
                 <button
                   type="button"
                   onClick={toggleFullscreen}
-                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-amber-600/60 hover:bg-amber-700 text-white rounded-xl shadow-sm transition-all cursor-pointer"
+                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-amber-600/60 hover:bg-amber-700 text-white rounded-xl shadow-sm transition-all cursor-pointer flex-shrink-0"
                   title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -72,16 +75,16 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
             </div>
           </div>
 
-          {/* Heading */}
-          <div className="mb-6">
+          {/* Heading & Subheading (Customizable, Centered on Mobile) */}
+          <div className="mb-5 sm:mb-6 text-center md:text-left flex flex-col items-center md:items-start">
             <span className="inline-block text-[11px] font-black tracking-widest text-amber-950 uppercase bg-amber-300/80 px-2.5 py-1 rounded-full mb-2">
               {texts.badge_text || 'Information:'}
             </span>
-            <h2 className="text-xl sm:text-2xl font-black text-amber-950 leading-tight break-words">
-              Tell us about you
+            <h2 className="text-xl sm:text-2xl font-black text-amber-950 leading-tight break-words text-center md:text-left w-full">
+              {texts.heading || 'Tell us about you'}
             </h2>
-            <p className="text-amber-950/80 text-xs sm:text-sm font-medium mt-1 break-words">
-              Your identity helps us resolve dining feedback quickly.
+            <p className="text-amber-950/80 text-xs sm:text-sm font-medium mt-1 break-words text-center md:text-left w-full">
+              {texts.subheading || 'Your identity helps us resolve dining feedback quickly.'}
             </p>
           </div>
 
@@ -228,15 +231,15 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
         {/* Footer note in left column */}
         <div className="mt-6 pt-4 border-t border-amber-950/15 hidden md:block">
           <p className="text-[11px] font-semibold text-amber-950/70">
-            Powered by Catalyst Hospitality Management
+            Powered by Catalyst service solutions
           </p>
         </div>
       </aside>
 
       {/* RIGHT COLUMN: White Feedback Area */}
       <section className="flex-grow flex flex-col bg-white overflow-visible md:overflow-hidden md:min-h-0">
-        {/* Top Header of Right Column */}
-        <div className="px-4 sm:px-8 pt-5 sm:pt-7 pb-3 border-b border-amber-100 flex-shrink-0 bg-white">
+        {/* Top Header of Right Column (Centered on Mobile, Left-aligned on Desktop) */}
+        <div className="px-4 sm:px-8 pt-5 sm:pt-7 pb-3 border-b border-amber-100 flex-shrink-0 bg-white text-center md:text-left">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight break-words">
             {texts.title || 'How did we do?'}
           </h1>
@@ -246,7 +249,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
         </div>
 
         {/* Questions Scrollable Body */}
-        <div className="flex-grow min-h-0 md:overflow-y-auto px-4 sm:px-8 py-4 space-y-4">
+        <div className="flex-grow min-h-0 md:overflow-y-auto px-3 sm:px-8 py-4 space-y-4">
           {questions.map((q, idx) => {
             const val = ratings[q.id];
             const qType = q.response_type || 'smiley_faces';
@@ -265,7 +268,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
             return (
               <div
                 key={q.id}
-                className="bg-amber-50/40 hover:bg-amber-50/80 border border-amber-200/70 rounded-2xl p-4 sm:p-5 transition-all shadow-xs"
+                className="bg-amber-50/40 hover:bg-amber-50/80 border border-amber-200/70 rounded-2xl p-3.5 sm:p-5 transition-all shadow-xs"
               >
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2.5">
@@ -278,9 +281,9 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                   </div>
                 </div>
 
-                {/* Question Options */}
+                {/* Question Options: Strictly 1 line on mobile with equal-width columns, scaled emojis & wrapping labels */}
                 {isSmiley && smileyOptions ? (
-                  <div className="flex items-center justify-around sm:justify-start sm:gap-6 py-2 flex-wrap gap-2">
+                  <div className="flex flex-nowrap w-full items-start justify-between gap-1 sm:gap-2 md:w-auto md:justify-start md:gap-6 py-2 overflow-x-hidden">
                     {smileyOptions.map((opt: any) => {
                       const isSelected = val !== undefined && val !== null && String(val) === String(opt.value);
                       return (
@@ -288,21 +291,26 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                           key={opt.value}
                           type="button"
                           onClick={() => onRatingChange(q.id, opt.value)}
-                          className="flex flex-col items-center gap-1.5 group outline-none cursor-pointer min-w-[44px] min-h-[44px]"
+                          className="flex-1 min-w-0 md:flex-initial flex flex-col items-center justify-start group outline-none cursor-pointer min-h-[44px] py-1 px-0.5"
+                          title={`${opt.label}`}
+                          aria-label={`${opt.label}`}
                         >
                           <div
-                            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-3xl sm:text-4xl transition-all pointer-events-none ${
+                            className={`rounded-full flex items-center justify-center transition-all pointer-events-none w-[clamp(2.1rem,8.5vw,3.5rem)] h-[clamp(2.1rem,8.5vw,3.5rem)] md:w-16 md:h-16 ${
                               isSelected
-                                ? 'bg-amber-400 ring-4 ring-amber-300 ring-offset-2 scale-110 shadow-lg text-slate-950'
+                                ? 'bg-amber-400 ring-3 sm:ring-4 ring-amber-300 ring-offset-1 sm:ring-offset-2 scale-105 sm:scale-110 shadow-md text-slate-950'
                                 : 'bg-white hover:bg-amber-100/80 border-2 border-amber-200/80 shadow-xs hover:scale-105'
                             }`}
                           >
-                            <span className="select-none filter drop-shadow-xs">{opt.emoji}</span>
+                            <span className="select-none filter drop-shadow-xs text-[clamp(1.2rem,5vw,2.2rem)] md:text-4xl leading-none">
+                              {opt.emoji}
+                            </span>
                           </div>
                           <span
-                            className={`text-xs font-bold transition-colors pointer-events-none ${
-                              isSelected ? 'text-amber-950 font-black' : 'text-slate-500 group-hover:text-slate-800'
+                            className={`w-full text-center text-[10px] sm:text-xs leading-tight transition-colors pointer-events-none mt-1.5 break-words [overflow-wrap:anywhere] ${
+                              isSelected ? 'text-amber-950 font-black' : 'text-slate-600 group-hover:text-slate-900 font-medium'
                             }`}
+                            style={{ wordBreak: 'break-word' }}
                           >
                             {opt.label}
                           </span>
@@ -355,6 +363,11 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
               <>{texts.submit_text || 'Submit Feedback'}</>
             )}
           </button>
+          <div className="text-center pt-3 md:hidden">
+            <p className="text-[11px] font-semibold text-slate-400">
+              Powered by Catalyst service solutions
+            </p>
+          </div>
         </div>
       </section>
     </div>

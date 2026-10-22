@@ -6,6 +6,7 @@ import SunnySplitThemeLayout from './SunnySplitThemeLayout';
 import NavySplitThemeLayout from './NavySplitThemeLayout';
 import MidnightDarkThemeLayout from './MidnightDarkThemeLayout';
 import ChalkboardThemeLayout from './ChalkboardThemeLayout';
+import WhiteThemeLayout from './WhiteThemeLayout';
 
 export const THEME_LIST: ThemeDefinition[] = [
   {
@@ -16,6 +17,21 @@ export const THEME_LIST: ThemeDefinition[] = [
     badge: 'Standard',
     accentColor: '#3b82f6',
     thumbnailClass: 'bg-white border-blue-500',
+    defaultTexts: {
+      title: 'We value your feedback!',
+      subtitle: 'Help us improve your dining experience.',
+      badge_text: '',
+      submit_text: 'Submit Feedback',
+    },
+  },
+  {
+    id: 'white_theme',
+    name: 'White theme',
+    tagline: 'Table-style rows layout',
+    description: 'Clean question rows on the left with response options on the right, and single top-row column labels.',
+    badge: 'Table View',
+    accentColor: '#4f46e5',
+    thumbnailClass: 'bg-white border-indigo-500',
     defaultTexts: {
       title: 'We value your feedback!',
       subtitle: 'Help us improve your dining experience.',
@@ -36,36 +52,8 @@ export const THEME_LIST: ThemeDefinition[] = [
       subtitle: 'Tap a face to rate your dining experience today',
       badge_text: 'Information:',
       submit_text: 'Submit Feedback',
-    },
-  },
-  {
-    id: 'navy_split',
-    name: 'Navy Split',
-    tagline: 'Executive deep navy presentation',
-    description: 'Deep navy brand panel on the left and horizontal question rows with emerald selection highlights.',
-    badge: 'Corporate',
-    accentColor: '#0b1528',
-    thumbnailClass: 'bg-[#0b1528] border-cyan-400',
-    defaultTexts: {
-      title: 'Dining Feedback',
-      subtitle: 'Help us maintain quality across all meals.',
-      badge_text: 'CATALYST FEEDBACK',
-      submit_text: 'Submit Feedback',
-    },
-  },
-  {
-    id: 'midnight_dark',
-    name: 'Midnight Dark',
-    tagline: 'Sleek dark mode with neon glow',
-    description: 'Full dark navy canvas with glowing emerald selection tiles, dark inputs, and vibrant cyan submit button.',
-    badge: 'Modern',
-    accentColor: '#06b6d4',
-    thumbnailClass: 'bg-[#0a0f1d] border-emerald-400',
-    defaultTexts: {
-      title: 'Dining Experience',
-      subtitle: 'Rate each service',
-      badge_text: 'LIVE FEEDBACK',
-      submit_text: 'Submit Feedback',
+      heading: 'Tell us about you',
+      subheading: 'Your identity helps us resolve dining feedback quickly.',
     },
   },
   {
@@ -81,6 +69,39 @@ export const THEME_LIST: ThemeDefinition[] = [
       subtitle: 'Freshly prepared daily',
       badge_text: '★ CATALYST ★',
       submit_text: 'Place Feedback Order',
+    },
+  },
+  // Legacy themes: hidden from picker for new selection, but preserved for existing canteens
+  {
+    id: 'navy_split',
+    name: 'Navy Split',
+    tagline: 'Executive deep navy presentation',
+    description: 'Deep navy brand panel on the left and horizontal question rows with emerald selection highlights.',
+    badge: 'Corporate',
+    accentColor: '#0b1528',
+    thumbnailClass: 'bg-[#0b1528] border-cyan-400',
+    isLegacy: true,
+    defaultTexts: {
+      title: 'Dining Feedback',
+      subtitle: 'Help us maintain quality across all meals.',
+      badge_text: 'CATALYST FEEDBACK',
+      submit_text: 'Submit Feedback',
+    },
+  },
+  {
+    id: 'midnight_dark',
+    name: 'Midnight Dark',
+    tagline: 'Sleek dark mode with neon glow',
+    description: 'Full dark navy canvas with glowing emerald selection tiles, dark inputs, and vibrant cyan submit button.',
+    badge: 'Modern',
+    accentColor: '#06b6d4',
+    thumbnailClass: 'bg-[#0a0f1d] border-emerald-400',
+    isLegacy: true,
+    defaultTexts: {
+      title: 'Dining Experience',
+      subtitle: 'Rate each service',
+      badge_text: 'LIVE FEEDBACK',
+      submit_text: 'Submit Feedback',
     },
   },
 ];
@@ -102,19 +123,23 @@ export const resolveThemeTexts = (
     subtitle: (customTexts?.subtitle?.trim()) || def.defaultTexts.subtitle,
     badge_text: (customTexts?.badge_text?.trim()) || def.defaultTexts.badge_text,
     submit_text: (customTexts?.submit_text?.trim()) || def.defaultTexts.submit_text,
+    heading: (customTexts?.heading?.trim()) || def.defaultTexts.heading || (themeId === 'sunny_split' ? 'Tell us about you' : ''),
+    subheading: (customTexts?.subheading?.trim()) || def.defaultTexts.subheading || (themeId === 'sunny_split' ? 'Your identity helps us resolve dining feedback quickly.' : ''),
   };
 };
 
 export const getThemeLayout = (themeId?: string): React.FC<ThemeLayoutProps> => {
   switch (themeId) {
+    case 'white_theme':
+      return WhiteThemeLayout;
     case 'sunny_split':
       return SunnySplitThemeLayout;
+    case 'chalkboard_menu':
+      return ChalkboardThemeLayout;
     case 'navy_split':
       return NavySplitThemeLayout;
     case 'midnight_dark':
       return MidnightDarkThemeLayout;
-    case 'chalkboard_menu':
-      return ChalkboardThemeLayout;
     case 'default':
     default:
       return DefaultThemeLayout;

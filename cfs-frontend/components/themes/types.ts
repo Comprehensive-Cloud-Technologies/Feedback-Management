@@ -66,4 +66,5 @@ export interface ThemeDefinition {
   accentColor: string;
   thumbnailClass: string;
   defaultTexts: ResolvedThemeTexts;
+  isLegacy?: boolean;
 }
