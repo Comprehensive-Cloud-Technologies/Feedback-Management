@@ -118,6 +118,7 @@ interface TextCustomization {
   maxLength?: number;
   rows?: number;
   required?: boolean;
+  is_remark?: boolean;
 }
 
 interface DropdownCustomization {
@@ -476,6 +477,21 @@ const CustomizationEditor: React.FC<CustomizationEditorProps> = ({ customization
               Mark as Required Question
             </label>
           </div>
+          {isLong && (
+            <div className="flex items-center gap-2 pt-4">
+              <input
+                type="checkbox"
+                id="field-is-remark"
+                checked={!!customization.is_remark}
+                onChange={e => onUpdate({ ...customization, is_remark: e.target.checked })}
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+              />
+              <label htmlFor="field-is-remark" className="text-sm font-semibold text-gray-800 cursor-pointer flex items-center gap-1.5">
+                <span>Show this question as remark</span>
+                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Bottom of form</span>
+              </label>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1127,7 +1143,8 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
           placeholder: 'Write your detailed feedback here...',
           maxLength: 1000,
           rows: 4,
-          required: false
+          required: false,
+          is_remark: false
         } as TextCustomization;
       case 'dropdown_single':
         return {
@@ -1813,11 +1830,38 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                   </div>
 
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
-                    <h3 className="font-bold text-gray-800 mb-6 text-center">{form.question_text || 'Your Question Here?'}</h3>
-                    <CustomQuestionRenderer
-                      question={{ id: 0, question_text: form.question_text, response_type: form.response_type, customization: customization || undefined }}
-                      onChange={() => { }}
-                    />
+                    {customization?.is_remark ? (
+                      <div className="w-full">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[10px] font-black px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full uppercase tracking-wider border border-amber-200">
+                            Remark (Form Bottom)
+                          </span>
+                        </div>
+                        <label className="block text-sm font-bold text-gray-800 mb-1.5">
+                          {form.question_text || 'Your Question Here?'}
+                          {customization.required && <span className="text-red-500 ml-1">*</span>}
+                        </label>
+                        <textarea
+                          rows={customization.rows || 3}
+                          placeholder={customization.placeholder || 'Write your detailed feedback here...'}
+                          disabled
+                          className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-500 resize-none"
+                        />
+                        <div className="mt-3 p-2.5 bg-amber-50/80 border border-dashed border-amber-300 rounded-lg text-center">
+                          <span className="text-xs font-semibold text-amber-800">
+                            ⬇️ Will appear at the bottom of the public form right above the Submit button
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="font-bold text-gray-800 mb-6 text-center">{form.question_text || 'Your Question Here?'}</h3>
+                        <CustomQuestionRenderer
+                          question={{ id: 0, question_text: form.question_text, response_type: form.response_type, customization: customization || undefined }}
+                          onChange={() => { }}
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1917,11 +1961,38 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                             </div>
 
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center mb-4">
-                              <h3 className="font-bold text-gray-800 mb-6 text-center">{editingQuestion.question_text}</h3>
-                              <CustomQuestionRenderer
-                                question={{ id: editingQuestion.id, question_text: editingQuestion.question_text, response_type: editingQuestion.response_type, customization: editingCustomization }}
-                                onChange={() => { }}
-                              />
+                              {editingCustomization?.is_remark ? (
+                                <div className="w-full">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[10px] font-black px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full uppercase tracking-wider border border-amber-200">
+                                      Remark (Form Bottom)
+                                    </span>
+                                  </div>
+                                  <label className="block text-sm font-bold text-gray-800 mb-1.5">
+                                    {editingQuestion.question_text || 'Your Question Here?'}
+                                    {editingCustomization.required && <span className="text-red-500 ml-1">*</span>}
+                                  </label>
+                                  <textarea
+                                    rows={editingCustomization.rows || 3}
+                                    placeholder={editingCustomization.placeholder || 'Write your detailed feedback here...'}
+                                    disabled
+                                    className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-500 resize-none"
+                                  />
+                                  <div className="mt-3 p-2.5 bg-amber-50/80 border border-dashed border-amber-300 rounded-lg text-center">
+                                    <span className="text-xs font-semibold text-amber-800">
+                                      ⬇️ Will appear at the bottom of the public form right above the Submit button
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <h3 className="font-bold text-gray-800 mb-6 text-center">{editingQuestion.question_text}</h3>
+                                  <CustomQuestionRenderer
+                                    question={{ id: editingQuestion.id, question_text: editingQuestion.question_text, response_type: editingQuestion.response_type, customization: editingCustomization }}
+                                    onChange={() => { }}
+                                  />
+                                </>
+                              )}
                             </div>
 
                             {showEditCustomizer && (
@@ -1934,8 +2005,17 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                       </div>
                     ) : (
                       <div>
-                        <div className="font-semibold text-gray-800">{q.question_text}</div>
-                        <div className="text-sm text-gray-600 mt-1">Type: <span className="font-medium">{q.response_type || 'smiley_faces'}</span></div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-800">{q.question_text}</span>
+                          {q.customization?.is_remark && (
+                            <span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full border border-amber-200">
+                              Remark
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          Type: <span className="font-medium">{q.response_type || 'smiley_faces'}</span>
+                        </div>
                       </div>
                     )}
                   </div>

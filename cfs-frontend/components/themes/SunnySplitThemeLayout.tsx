@@ -32,6 +32,9 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
   isAllRatingsAnswered,
   onSubmit,
 }) => {
+  const normalQuestions = questions.filter(q => !q.customization?.is_remark);
+  const remarkQuestions = questions.filter(q => !!q.customization?.is_remark);
+
   return (
     <div className="flex-grow min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative w-full bg-[#FFFBEB] font-sans text-slate-900">
       {/* LEFT COLUMN: Solid Amber Panel */}
@@ -250,7 +253,7 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
 
         {/* Questions Scrollable Body */}
         <div className="flex-grow min-h-0 md:overflow-y-auto px-3 sm:px-8 py-4 space-y-4">
-          {questions.map((q, idx) => {
+          {normalQuestions.map((q, idx) => {
             const val = ratings[q.id];
             const qType = q.response_type || 'smiley_faces';
 
@@ -331,6 +334,36 @@ export const SunnySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                       onChange={(v) => onRatingChange(q.id, v)}
                       questionCount={questions.length}
                     />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Remark Questions — Stacked full-width textareas right above Submit */}
+          {remarkQuestions.map((rq) => {
+            const cust = rq.customization || {};
+            const val = ratings[rq.id] ?? '';
+            return (
+              <div
+                key={rq.id}
+                className="w-full p-4 rounded-2xl border-2 border-amber-200/80 bg-[#FFFDF7] shadow-sm transition-all"
+              >
+                <label className="block text-sm font-bold text-slate-800 mb-1.5">
+                  {rq.question_text || rq.text || 'Remark'}
+                  {cust.required && <span className="text-amber-600 ml-1">*</span>}
+                </label>
+                <textarea
+                  rows={cust.rows || 3}
+                  maxLength={cust.maxLength || 1000}
+                  placeholder={cust.placeholder || 'Write your detailed feedback here...'}
+                  value={val}
+                  onChange={e => onRatingChange(rq.id, e.target.value)}
+                  className="w-full bg-white border border-amber-200 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 outline-none transition resize-none shadow-inner"
+                />
+                {cust.maxLength && (
+                  <div className="text-[10px] sm:text-[11px] text-slate-400 text-right mt-1">
+                    {String(val).length}/{cust.maxLength}
                   </div>
                 )}
               </div>

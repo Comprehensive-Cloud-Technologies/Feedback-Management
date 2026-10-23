@@ -32,6 +32,9 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
   isAllRatingsAnswered,
   onSubmit,
 }) => {
+  const normalQuestions = questions.filter(q => !q.customization?.is_remark);
+  const remarkQuestions = questions.filter(q => !!q.customization?.is_remark);
+
   return (
     <div className="flex-grow min-h-0 flex flex-col overflow-hidden relative w-full bg-[#0E1A13] p-1 sm:p-2 md:p-3">
       {/* Wooden Frame Wrapper */}
@@ -127,7 +130,7 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
         <div className="flex-grow min-h-0 overflow-y-auto px-3 sm:px-6 py-4">
           <div className="max-w-4xl mx-auto space-y-3.5 pb-6">
             {/* Menu Items / Questions */}
-            {questions.map((q, idx) => {
+            {normalQuestions.map((q, idx) => {
               const val = ratings[q.id];
               const qType = q.response_type || 'smiley_faces';
               const isSmiley = qType === 'smiley_faces';
@@ -323,6 +326,36 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                 ))}
               </div>
             )}
+
+            {/* Remark Questions — Stacked full-width textareas right above Submit */}
+            {remarkQuestions.map((rq) => {
+              const cust = rq.customization || {};
+              const val = ratings[rq.id] ?? '';
+              return (
+                <div
+                  key={rq.id}
+                  className="w-full p-4 rounded-xl border border-emerald-700/50 bg-[#0d1811] shadow-md transition-all"
+                >
+                  <label className="block text-xs sm:text-sm font-serif font-bold text-[#FFF8E7] mb-1.5">
+                    {rq.question_text || rq.text || 'Remark'}
+                    {cust.required && <span className="text-amber-400 ml-1">*</span>}
+                  </label>
+                  <textarea
+                    rows={cust.rows || 3}
+                    maxLength={cust.maxLength || 1000}
+                    placeholder={cust.placeholder || 'Write your feedback or remarks here...'}
+                    value={val}
+                    onChange={e => onRatingChange(rq.id, e.target.value)}
+                    className="w-full bg-[#14231A] border border-emerald-600/40 focus:border-amber-400 rounded-lg px-3 py-2 text-xs sm:text-sm text-[#FFF8E7] placeholder:text-emerald-300/40 outline-none transition resize-none font-serif"
+                  />
+                  {cust.maxLength && (
+                    <div className="text-[10px] sm:text-[11px] text-emerald-400/60 text-right mt-1 font-mono">
+                      {String(val).length}/{cust.maxLength}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {/* Validation Notice */}
             {validationWarning && (

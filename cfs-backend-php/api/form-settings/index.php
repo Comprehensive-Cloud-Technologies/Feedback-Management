@@ -98,12 +98,6 @@ function handleGet()
 {
     $query = Response::getQuery();
 
-    if (!isset($query['canteen_id'])) {
-        Response::error('Missing canteen_id parameter', 400);
-    }
-
-    $canteenId = intval($query['canteen_id']);
-
     $hasCustomFields = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'custom_fields'");
     $hasThemeCols = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'theme_id'");
     $hasBgCols = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'bg_image_enabled'");
@@ -118,6 +112,54 @@ function handleGet()
     if ($hasBgCols) {
         $selectCols .= ', bg_image_enabled, bg_image_data';
     }
+
+    if (isset($query['site'])) {
+        $rawSite = $query['site'];
+        $cleanSite = trim($rawSite);
+        $hasSiteId = Database::fetchOne("SHOW COLUMNS FROM canteens LIKE 'site_id'");
+        if ($hasSiteId) {
+            $siteRow = Database::fetchOne("SELECT id FROM sites WHERE TRIM(location) = ? OR location = ?", [$cleanSite, $rawSite]);
+            $siteId = $siteRow ? (int)$siteRow['id'] : null;
+            $canteens = $siteId ? Database::fetchAll("SELECT id, name FROM canteens WHERE site_id = ?", [$siteId]) : [];
+        } else {
+            $canteens = Database::fetchAll("SELECT id, name FROM canteens WHERE TRIM(site) = ? OR site = ?", [$cleanSite, $rawSite]);
+        }
+        $settingsByCanteen = [];
+        foreach ($canteens as $c) {
+            $cId = (int)$c['id'];
+            $cName = $c['name'];
+            $row = Database::fetchOne("SELECT $selectCols FROM form_settings WHERE canteen_id = ?", [$cId]);
+            if ($row) {
+                if (!empty($row['custom_fields'])) {
+                    $decoded = is_string($row['custom_fields']) ? json_decode($row['custom_fields'], true) : $row['custom_fields'];
+                    $row['custom_fields'] = is_array($decoded) ? $decoded : [];
+                } else {
+                    $row['custom_fields'] = [];
+                }
+                $settingsByCanteen[$cName] = $row;
+            } else {
+                $settingsByCanteen[$cName] = [
+                    'enable_fullscreen' => 0,
+                    'collect_user_info' => 0,
+                    'field_name' => 0,
+                    'field_department' => 0,
+                    'field_suggestion' => 0,
+                    'field_meal_slot' => 0,
+                    'field_employee_id' => 0,
+                    'custom_fields' => [],
+                    'theme_id' => 'default'
+                ];
+            }
+        }
+        Response::success(['settings_by_canteen' => $settingsByCanteen]);
+        return;
+    }
+
+    if (!isset($query['canteen_id'])) {
+        Response::error('Missing canteen_id parameter', 400);
+    }
+
+    $canteenId = intval($query['canteen_id']);
 
     $settings = Database::fetchOne(
         "SELECT $selectCols FROM form_settings WHERE canteen_id = ?",

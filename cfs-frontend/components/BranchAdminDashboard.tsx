@@ -9,6 +9,7 @@ import StatCard from './StatCard';
 import AverageRatingChart from './AverageRatingChart';
 import { FeedbackSubmission, Question, RatingLevel, Canteen, MealSlot } from '../types';
 import { RATINGS, getEndpoints, FRONTEND_URL, RATING_LABELS } from '../constants';
+import { isRatingQuestion, isRatingResponse, calculateAverageRating, formatAverageRating } from '../utils/ratingUtils';
 import catalystLogo from '../src/images/clogo.png';
 
 const toSlug = (name: string) => {
@@ -49,6 +50,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
     const [notification, setNotification] = useState<string | null>(null);
     const [fieldsMap, setFieldsMap] = useState<Record<string, string>>({});
     const [branchLogo, setBranchLogo] = useState<string>('');
+    const [formSettingsByCanteen, setFormSettingsByCanteen] = useState<Record<string, any>>({});
 
     // Filters
     const [selectedCanteen, setSelectedCanteen] = useState<string>('All Canteens');
@@ -106,13 +108,16 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             }
 
             // 3. Fetch Canteens
+            let fetchedCanteens: Canteen[] = [];
             const cRes = await fetch(`${endpoints.CANTEENS}?site=${encodeURIComponent(site)}`, { headers });
             if (cRes.ok) {
                 const cData = await cRes.json();
                 if (Array.isArray(cData.details)) {
+                    fetchedCanteens = cData.details;
                     setCanteens(cData.details);
                 } else if (Array.isArray(cData.canteens)) {
-                    setCanteens(cData.canteens.map((name: string) => ({ name, site, meal_slots: [] })));
+                    fetchedCanteens = cData.canteens.map((name: string) => ({ name, site, meal_slots: [] }));
+                    setCanteens(fetchedCanteens);
                 } else {
                     setCanteens([]);
                 }
@@ -126,6 +131,34 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                     if (bData.branch_admins?.length > 0 && bData.branch_admins[0].logo) {
                         setBranchLogo(bData.branch_admins[0].logo);
                     }
+                }
+            } catch {}
+
+            // 5. Fetch Form Settings for Canteens (for dynamic columns)
+            try {
+                const fsRes = await fetch(`${endpoints.FORM_SETTINGS}?site=${encodeURIComponent(site)}`, { headers });
+                if (fsRes.ok) {
+                    const fsData = await fsRes.json();
+                    if (fsData.settings_by_canteen && typeof fsData.settings_by_canteen === 'object') {
+                        setFormSettingsByCanteen(fsData.settings_by_canteen);
+                    }
+                } else if (fetchedCanteens.length > 0) {
+                    // Fallback: fetch per canteen
+                    const settingsMap: Record<string, any> = {};
+                    await Promise.all(
+                        fetchedCanteens.map(async (c) => {
+                            if (c.id) {
+                                try {
+                                    const res = await fetch(`${endpoints.FORM_SETTINGS}?canteen_id=${c.id}`);
+                                    if (res.ok) {
+                                        const d = await res.json();
+                                        if (d.settings) settingsMap[c.name] = d.settings;
+                                    }
+                                } catch {}
+                            }
+                        })
+                    );
+                    setFormSettingsByCanteen(settingsMap);
                 }
             } catch {}
 
@@ -210,17 +243,160 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
 
 
+    const qMap = useMemo(() => {
+        const map: Record<string, Question> = {};
+        questions.forEach(q => {
+            map[String(q.id)] = q;
+        });
+        return map;
+    }, [questions]);
+
+    const questionsMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        questions.forEach(q => {
+            map[String(q.id)] = q.question_text;
+        });
+        return map;
+    }, [questions]);
+
+    // Dynamic Columns for Manage Feedback Submissions Table
+    interface DynamicColumn {
+        id: string;
+        label: string;
+        type: 'standard' | 'custom';
+        order: number;
+        getValue: (fb: FeedbackSubmission) => any;
+    }
+
+    const dynamicColumns = useMemo<DynamicColumn[]>(() => {
+        const canteensInScope = selectedCanteen === 'All Canteens'
+            ? canteens
+            : canteens.filter(c => c.name === selectedCanteen);
+
+        const settingsList = canteensInScope.map(c => formSettingsByCanteen[c.name]).filter(Boolean);
+
+        const hasData = (check: (fb: FeedbackSubmission) => any) =>
+            filteredFeedback.some(fb => {
+                const v = check(fb);
+                return v !== undefined && v !== null && String(v).trim() !== '' && v !== 'Other';
+            });
+
+        const isStdEnabled = (key: string, check: (fb: FeedbackSubmission) => any) => {
+            const enabledInSettings = settingsList.some(s => s.collect_user_info && s[key]);
+            return enabledInSettings || hasData(check);
+        };
+
+        const cols: DynamicColumn[] = [];
+
+        // 1. Name
+        if (isStdEnabled('field_name', fb => fb.user_name || fb.username || fb.name)) {
+            cols.push({
+                id: 'std_name',
+                label: 'Name',
+                type: 'standard',
+                order: 1,
+                getValue: fb => fb.user_name || fb.username || fb.name || ''
+            });
+        }
+
+        // 2. Employee ID
+        if (isStdEnabled('field_employee_id', fb => fb.user_employee_id)) {
+            cols.push({
+                id: 'std_employee_id',
+                label: 'Employee ID',
+                type: 'standard',
+                order: 2,
+                getValue: fb => fb.user_employee_id || ''
+            });
+        }
+
+        // 3. Department
+        if (isStdEnabled('field_department', fb => fb.user_department)) {
+            cols.push({
+                id: 'std_department',
+                label: 'Department',
+                type: 'standard',
+                order: 3,
+                getValue: fb => fb.user_department || ''
+            });
+        }
+
+        // 4. Meal Slot
+        if (isStdEnabled('field_meal_slot', fb => fb.selected_meal_slot || fb.meal_category)) {
+            cols.push({
+                id: 'std_meal_slot',
+                label: 'Meal Slot',
+                type: 'standard',
+                order: 4,
+                getValue: fb => fb.selected_meal_slot || fb.meal_category || ''
+            });
+        }
+
+        // 5. Suggestion / Description
+        if (isStdEnabled('field_suggestion', fb => fb.user_suggestion)) {
+            cols.push({
+                id: 'std_suggestion',
+                label: 'Description / Suggestion',
+                type: 'standard',
+                order: 5,
+                getValue: fb => fb.user_suggestion || ''
+            });
+        }
+
+        // 6. Custom Fields
+        const customFieldMap = new Map<string, { label: string; order: number }>();
+
+        settingsList.forEach(s => {
+            if (s.collect_user_info && Array.isArray(s.custom_fields)) {
+                s.custom_fields.forEach((cf: any) => {
+                    if (cf && cf.id && cf.enabled !== false) {
+                        customFieldMap.set(cf.id, {
+                            label: cf.label || fieldsMap[cf.id] || cf.id,
+                            order: typeof cf.order === 'number' ? cf.order : 100
+                        });
+                    }
+                });
+            }
+        });
+
+        filteredFeedback.forEach(fb => {
+            if (fb.custom_field_values && typeof fb.custom_field_values === 'object') {
+                Object.keys(fb.custom_field_values).forEach(k => {
+                    const val = fb.custom_field_values?.[k];
+                    if (val !== undefined && val !== null && String(val).trim() !== '') {
+                        if (!customFieldMap.has(k)) {
+                            const label = fieldsMap[k] || (fb as any).custom_field_labels?.[k] || (k.startsWith('cf_') ? k : k.replace(/([A-Z])/g, ' $1').trim());
+                            customFieldMap.set(k, { label, order: 200 });
+                        }
+                    }
+                });
+            }
+        });
+
+        Array.from(customFieldMap.entries())
+            .sort((a, b) => a[1].order - b[1].order)
+            .forEach(([id, info], idx) => {
+                const latestLabel = fieldsMap[id] || info.label;
+                cols.push({
+                    id,
+                    label: latestLabel,
+                    type: 'custom',
+                    order: 10 + idx,
+                    getValue: fb => fb.custom_field_values?.[id]
+                });
+            });
+
+        return cols;
+    }, [canteens, selectedCanteen, formSettingsByCanteen, filteredFeedback, fieldsMap]);
+
     // --- Analytics Calculation ---
     const analytics = useMemo(() => {
-        // Step 1: Determine dynamic rating levels from question customization or feedback data
-        const qMap: Record<string, any> = {};
-        questions.forEach(q => qMap[String(q.id)] = q);
-
         // First, try to get the rating scale from question customization (source of truth)
         let customMaxRating = 0;
         let customLabels: string[] = [];
         let customColors: string[] = [];
         for (const q of questions) {
+            if (!isRatingQuestion(q)) continue;
             const cust = (q as any).customization;
             if (cust && cust.options && Array.isArray(cust.options) && cust.options.length >= 2) {
                 const sorted = [...cust.options].sort((a: any, b: any) => a.value - b.value);
@@ -230,7 +406,6 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                     customColors = sorted.map((o: any) => {
                         const c = o.color;
                         if (!c) return 'text-gray-500';
-                        // Map hex colors to Tailwind text classes
                         if (c.includes('ef4444') || c.includes('dc2626')) return 'text-red-500';
                         if (c.includes('f97316') || c.includes('ea580c')) return 'text-orange-500';
                         if (c.includes('eab308') || c.includes('ca8a04')) return 'text-yellow-500';
@@ -242,13 +417,15 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             }
         }
 
-        // Determine maxRating: prefer customization, fall back to feedback data
+        // Determine maxRating: prefer customization, fall back to feedback data (only rating responses)
         let maxRating = customMaxRating;
         if (maxRating === 0) {
             filteredFeedback.forEach(fb => {
                 fb.responses?.forEach(r => {
-                    const val = Number(r.rating);
-                    if (val > maxRating) maxRating = val;
+                    if (isRatingResponse(r, qMap)) {
+                        const val = Number(r.rating);
+                        if (val > maxRating) maxRating = val;
+                    }
                 });
             });
         }
@@ -268,7 +445,6 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             5: ['text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500', 'text-emerald-700']
         };
 
-        // Use customization labels if available, otherwise defaults
         let dynamicLabels: string[] = customLabels.length === maxRating ? customLabels : (defaultLabelsMap[maxRating] || defaultLabelsMap[4]);
         let dynamicColors: string[] = customColors.length === maxRating ? customColors : (defaultColorsMap[maxRating] || defaultColorsMap[4]);
 
@@ -276,12 +452,11 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
         const labelsByLevel: Record<number, string> = {};
         filteredFeedback.forEach(fb => {
             fb.responses?.forEach((r: any) => {
-                if (r.rating_label && r.rating) {
+                if (isRatingResponse(r, qMap) && r.rating_label && r.rating) {
                     labelsByLevel[Number(r.rating)] = r.rating_label;
                 }
             });
         });
-        // If we found labels from feedback data, use them
         if (Object.keys(labelsByLevel).length > 0) {
             const levels = Object.keys(labelsByLevel).map(Number).sort((a, b) => a - b);
             if (levels.length >= maxRating) {
@@ -303,11 +478,13 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
         filteredFeedback.forEach(fb => {
             fb.responses?.forEach(r => {
-                const val = Number(r.rating);
-                if (val >= 1 && val <= maxRating) {
-                    ratingCounts[val] = (ratingCounts[val] || 0) + 1;
-                    totalRatings++;
-                    weightedSum += val;
+                if (isRatingResponse(r, qMap)) {
+                    const val = Number(r.rating);
+                    if (val >= 1 && val <= maxRating) {
+                        ratingCounts[val] = (ratingCounts[val] || 0) + 1;
+                        totalRatings++;
+                        weightedSum += val;
+                    }
                 }
             });
         });
@@ -328,8 +505,14 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
         filteredFeedback.forEach(fb => {
             fb.responses?.forEach(r => {
                 const qId = String(r.question_id || r.questionId);
-                const qText = r.question_text || qMap[qId]?.question_text || `Question ${qId}`;
-                const emoji = qMap[qId]?.emoji || '😐';
+                const qObj = qMap[qId];
+
+                // STRICT CHECK: Skip questions that are non-rating (text, dropdown, choice, remark)
+                if (qObj && !isRatingQuestion(qObj)) return;
+                if (!isRatingResponse(r, qMap)) return;
+
+                const qText = r.question_text || qObj?.question_text || `Question ${qId}`;
+                const emoji = qObj?.emoji || '😐';
 
                 if (!qStats[qText]) {
                     const initRatings: Record<number, number> = {};
@@ -350,7 +533,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 label: r.label,
                 level: r.level,
                 count: stats.ratings[r.level] || 0,
-                pct: (((stats.ratings[r.level] || 0) / total) * 100).toFixed(1),
+                pct: stats.total > 0 ? (((stats.ratings[r.level] || 0) / total) * 100).toFixed(1) : '0.0',
                 color: r.color
             }));
 
@@ -358,7 +541,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 question: text,
                 emoji: stats.emoji,
                 levelStats,
-                average: (dynamicRatings.reduce((sum, r) => sum + ((stats.ratings[r.level] || 0) * r.level), 0) / total).toFixed(2),
+                average: stats.total > 0 ? (dynamicRatings.reduce((sum, r) => sum + ((stats.ratings[r.level] || 0) * r.level), 0) / stats.total).toFixed(2) : '0.00',
                 totalResponses: stats.total
             };
         }).sort((a, b) => a.question.localeCompare(b.question));
@@ -392,15 +575,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             averageChartData,
             dynamicRatings
         };
-    }, [filteredFeedback, questions]);
-
-    const questionsMap = useMemo(() => {
-        const map: Record<string, string> = {};
-        questions.forEach(q => {
-            map[String(q.id)] = q.question_text;
-        });
-        return map;
-    }, [questions]);
+    }, [filteredFeedback, questions, qMap]);
 
     const handleDeleteFeedback = async () => {
         if (!deleteFbId) return;
@@ -447,24 +622,24 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
         let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
 
-        // Header row: ID, Metadata, and then each unique question
-        const headers = ["ID", "Timestamp", "Canteen", "Name", "Employee ID", "Department", "Meal Slot", "Overall Rating", ...uniqueQuestions, "Suggestion"];
-        csvContent += headers.map(h => `"${h}"`).join(',') + '\r\n';
+        // Header row: ID, Timestamp, Canteen, dynamic user info columns, Overall Rating, questions
+        const headers = ["ID", "Timestamp", "Canteen", ...dynamicColumns.map(c => c.label), "Overall Rating", ...uniqueQuestions];
+        csvContent += headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\r\n';
 
         filteredFeedback.forEach(fb => {
-            const overallRating = fb.responses.length > 0
-                ? (fb.responses.reduce((s, r) => s + r.rating, 0) / fb.responses.length).toFixed(2)
-                : '0.00';
+            const avgNum = calculateAverageRating(fb.responses, qMap);
+            const overallRating = avgNum !== null ? avgNum.toFixed(2) : '-';
 
-            // Base row values
-            const rowValues = [
+            // Base row values with dynamic columns
+            const rowValues: any[] = [
                 fb.id,
                 new Date(fb.timestamp).toLocaleString(),
                 fb.canteen || fb.canteen_id,
-                fb.user_name || fb.username || '',
-                fb.user_employee_id || '',
-                fb.user_department || '',
-                fb.selected_meal_slot || fb.meal_category || 'Other',
+                ...dynamicColumns.map(col => {
+                    const v = col.getValue(fb);
+                    if (v === undefined || v === null) return '';
+                    return Array.isArray(v) ? v.join('; ') : String(v);
+                }),
                 overallRating
             ];
 
@@ -489,9 +664,6 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                     rowValues.push(ans);
                 }
             });
-
-            // Add suggestion at the end
-            rowValues.push(fb.user_suggestion || '');
 
             // Escape each cell and join with comma
             const escapedRow = rowValues.map(v => `"${String(v).replace(/"/g, '""')}"`);
@@ -640,7 +812,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 {activeTab === 'dashboard' && (
                     <div className="space-y-10 animate-fade-in">
                         {/* Filters Bar */}
-                        <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                        <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 no-print">
                             <div className="flex flex-wrap items-center gap-4 justify-between">
                                 <div className="flex flex-wrap items-center gap-3">
                                     <div className="group flex flex-col gap-1">
@@ -869,69 +1041,127 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                 <table className="w-full text-left">
                                     <thead className="bg-[#f8f9fa] border-b border-gray-200">
                                         <tr>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Date / Time</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Canteen</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">User</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Emp ID</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Meal</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Rating</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest print-only">Details</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-center no-print">Actions</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">Date / Time</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">Canteen</th>
+                                            {dynamicColumns.map(col => (
+                                                <th key={col.id} className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">
+                                                    {col.label}
+                                                </th>
+                                            ))}
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">Rating</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest print-only min-w-[280px]">Details</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-center no-print whitespace-nowrap sticky right-0 bg-[#f8f9fa] shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {filteredFeedback.map(fb => (
-                                            <tr key={fb.id} className="hover:bg-gray-50/80 transition-all group">
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-600">
-                                                    {new Date(fb.timestamp).toLocaleString()}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm font-bold text-gray-800">
-                                                    {fb.canteen || fb.canteen_id}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm text-gray-500 italic">
-                                                    {fb.user_name || fb.username || 'Anonymous'}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm text-gray-500">
-                                                    {fb.user_employee_id || <span style={{ color: '#aaa' }}>-</span>}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-xs font-black uppercase">
-                                                        {fb.meal_category || 'Other'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className={`w-3 h-3 rounded-full ${Number(fb.responses.reduce((s, r) => s + r.rating, 0) / fb.responses.length) > 3 ? 'bg-green-500' : 'bg-yellow-500'} no-print`}></span>
-                                                        <span className="font-black text-gray-800 text-lg">
-                                                            {(fb.responses.reduce((s, r) => s + r.rating, 0) / fb.responses.length).toFixed(1)}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 print-only">
-                                                    <div className="text-[10px] space-y-1">
-                                                        {fb.responses.map((r, i) => (
-                                                            <div key={i} className="flex justify-between gap-4 border-b border-gray-50 pb-1 last:border-0">
-                                                                <span className="text-gray-600 font-medium">
-                                                                    {r.question_text || questionsMap[String(r.question_id || r.questionId)] || 'Question'}:
+                                        {filteredFeedback.map(fb => {
+                                            const avgRating = calculateAverageRating(fb.responses, qMap);
+                                            return (
+                                                <tr key={fb.id} className="hover:bg-gray-50/80 transition-all group">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-600">
+                                                        {new Date(fb.timestamp).toLocaleString()}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm font-bold text-gray-800 whitespace-nowrap">
+                                                        {fb.canteen || fb.canteen_id}
+                                                    </td>
+                                                    {dynamicColumns.map(col => {
+                                                        const val = col.getValue(fb);
+                                                        const isBlank = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+                                                        let displayStr = '-';
+                                                        if (!isBlank) {
+                                                            displayStr = Array.isArray(val) ? val.join(', ') : String(val);
+                                                        }
+                                                        return (
+                                                            <td key={col.id} className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">
+                                                                {isBlank ? (
+                                                                    <span className="text-gray-300 font-medium">-</span>
+                                                                ) : displayStr.length > 30 ? (
+                                                                    <div className="max-w-[200px] truncate cursor-help" title={displayStr}>
+                                                                        {displayStr}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span>{displayStr}</span>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        {avgRating === null ? (
+                                                            <span className="font-bold text-gray-400 text-lg">-</span>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={`w-3 h-3 rounded-full ${avgRating > 3 ? 'bg-green-500' : 'bg-yellow-500'} no-print`}></span>
+                                                                <span className="font-black text-gray-800 text-lg">
+                                                                    {avgRating.toFixed(1)}
                                                                 </span>
-                                                                <span className="font-bold text-gray-900">{r.rating}</span>
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 text-center no-print">
-                                                    <div className="flex justify-center gap-2">
-                                                        <button
-                                                            onClick={() => setDetailsId(fb.id)}
-                                                            className="px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all font-bold text-xs flex items-center gap-2 shadow-sm"
-                                                        >
-                                                            <FaEye /> View Details
-                                                        </button>
-                                                        {/* Delete button removed per user request */}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4 print-only">
+                                                        <div className="text-[10px] space-y-1.5">
+                                                            {fb.responses.map((r, i) => {
+                                                                const qId = String(r.question_id || r.questionId || '');
+                                                                const qObj = qMap[qId];
+                                                                const qText = r.question_text || qObj?.question_text || questionsMap[qId] || `Question ${i + 1}`;
+                                                                const isRemark = r.is_remark === true || qObj?.customization?.is_remark === true || (qObj as any)?.is_remark === true;
+                                                                const isRating = isRatingResponse(r, qMap);
+
+                                                                if (isRating) {
+                                                                    return (
+                                                                        <div key={i} className="flex justify-between gap-4 border-b border-gray-100 pb-1 last:border-0 break-inside-avoid">
+                                                                            <span className="text-gray-700 font-medium">{qText}:</span>
+                                                                            <span className="font-bold text-gray-900 flex-shrink-0">
+                                                                                {r.rating} {r.rating_label ? `(${r.rating_label})` : ''}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }
+
+                                                                let answerText = r.answer;
+                                                                if (Array.isArray(answerText)) {
+                                                                    answerText = answerText.join(', ');
+                                                                } else if (typeof answerText === 'string' && answerText.startsWith('[') && answerText.endsWith(']')) {
+                                                                    try {
+                                                                        const parsed = JSON.parse(answerText);
+                                                                        if (Array.isArray(parsed)) answerText = parsed.join(', ');
+                                                                    } catch {}
+                                                                }
+                                                                if (r.other_text) {
+                                                                    answerText = answerText ? `${answerText} (Other: ${r.other_text})` : `Other: ${r.other_text}`;
+                                                                }
+                                                                const displayVal = (answerText !== undefined && answerText !== null && String(answerText).trim() !== '')
+                                                                    ? String(answerText)
+                                                                    : '-';
+
+                                                                return (
+                                                                    <div key={i} className="border-b border-gray-100 pb-1 last:border-0 break-inside-avoid">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            {isRemark && (
+                                                                                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[8px] font-bold rounded">Remark</span>
+                                                                            )}
+                                                                            <span className="text-gray-700 font-semibold">{qText}:</span>
+                                                                        </div>
+                                                                        <div className="text-gray-900 font-medium whitespace-pre-wrap break-words pl-2 mt-0.5">
+                                                                            {displayVal}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center no-print whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
+                                                        <div className="flex justify-center gap-2">
+                                                            <button
+                                                                onClick={() => setDetailsId(fb.id)}
+                                                                className="px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all font-bold text-xs flex items-center gap-2 shadow-sm"
+                                                            >
+                                                                <FaEye /> View Details
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -1219,7 +1449,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
 
                 <style>{`
                     @media print {
-                        .no-print { display: none !important; }
+                        .no-print { display: none !important; margin: 0 !important; padding: 0 !important; height: 0 !important; }
                         * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
                         body, .min-h-screen { background: white !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; }
                         main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; display: block !important; }
@@ -1327,25 +1557,43 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                     <p className="text-xs font-black text-gray-800 uppercase border-b border-gray-100 pb-1.5">Responses</p>
                                     <div className="space-y-2">
                                         {activeFeedback.responses.map((r, i) => {
-                                            const isNumericRating = typeof r.rating === 'number' && !isNaN(r.rating) && r.rating !== null;
-                                            if (!isNumericRating) {
+                                            const qId = String(r.question_id || r.questionId || '');
+                                            const qObj = qMap[qId];
+                                            const qText = r.question_text || qObj?.question_text || questionsMap[qId] || `Question ${i + 1}`;
+                                            const isRemark = r.is_remark === true || qObj?.customization?.is_remark === true || (qObj as any)?.is_remark === true;
+                                            const isRating = isRatingResponse(r, qMap);
+
+                                            if (!isRating) {
                                                 let displayAns = r.answer || '';
                                                 if (typeof displayAns === 'string' && displayAns.startsWith('[') && displayAns.endsWith(']')) {
                                                     try {
                                                         const parsed = JSON.parse(displayAns);
                                                         if (Array.isArray(parsed)) displayAns = parsed.join(', ');
                                                     } catch {}
+                                                } else if (Array.isArray(displayAns)) {
+                                                    displayAns = displayAns.join(', ');
                                                 }
                                                 return (
-                                                    <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                                        <span className="text-xs font-bold text-gray-700 flex-1 pr-3">{r.question_text || `Question ${r.question_id}`}</span>
-                                                        <div className="flex flex-col items-end flex-shrink-0">
-                                                            <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-md">
-                                                                {displayAns || 'Answered'}
+                                                    <div key={i} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
+                                                        <div className="flex justify-between items-start gap-2">
+                                                            <span className="text-xs font-bold text-gray-700 flex-1">
+                                                                {qText}
                                                             </span>
+                                                            {isRemark ? (
+                                                                <span className="text-[10px] font-black px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md uppercase tracking-wider flex-shrink-0">
+                                                                    Remark
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md flex-shrink-0">
+                                                                    Text Answer
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-gray-900 font-medium whitespace-pre-wrap break-words pl-1 pt-1 border-t border-gray-100">
+                                                            {displayAns || <span className="text-gray-400 italic">No answer provided</span>}
                                                             {r.other_text && (
-                                                                <span className="text-[10px] text-gray-500 italic mt-0.5">
-                                                                    ({r.other_text})
+                                                                <span className="text-[11px] text-gray-500 italic block mt-0.5">
+                                                                    (Other: {r.other_text})
                                                                 </span>
                                                             )}
                                                         </div>
@@ -1353,13 +1601,14 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                 );
                                             }
 
-                                            const label = r.rating_label || RATING_LABELS[r.rating] || 'Rated';
+                                            const ratingNum = Number(r.rating);
+                                            const label = r.rating_label || RATING_LABELS[ratingNum] || 'Rated';
                                             const isPositive = r.rating_label
                                                 ? ['good', 'excellent', 'great', 'very good'].some(w => (r.rating_label || '').toLowerCase().includes(w))
-                                                : r.rating >= 3;
+                                                : ratingNum >= 3;
                                             return (
                                                 <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                                    <span className="text-xs font-bold text-gray-700 flex-1 pr-3">{r.question_text || `Question ${r.question_id}`}</span>
+                                                    <span className="text-xs font-bold text-gray-700 flex-1 pr-3">{qText}</span>
                                                     <div className="flex flex-col items-end flex-shrink-0">
                                                         <span className={`text-[10px] font-black uppercase ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                                                             {label}

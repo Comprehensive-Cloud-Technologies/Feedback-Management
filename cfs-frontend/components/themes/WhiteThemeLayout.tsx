@@ -45,6 +45,8 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
   onSubmit,
 }) => {
   const isBgEnabled = !!formSettings?.bg_image_enabled && !!formSettings?.bg_image_data;
+  const normalQuestions = questions.filter(q => !q.customization?.is_remark);
+  const remarkQuestions = questions.filter(q => !!q.customization?.is_remark);
 
   // Group consecutive rating questions sharing identical options for column-header alignment
   const groupedQuestions = useMemo(() => {
@@ -58,7 +60,7 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
       { value: 4, label: 'Good', emoji: '😀', color: '#22c55e' }
     ];
 
-    questions.forEach((q) => {
+    normalQuestions.forEach((q) => {
       const qType = q.response_type || 'smiley_faces';
       const isRating = qType === 'smiley_faces';
 
@@ -99,7 +101,7 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
     });
 
     return groups;
-  }, [questions]);
+  }, [normalQuestions]);
 
   return (
     <div className="flex-grow min-h-0 flex flex-col overflow-hidden relative w-full pt-1 font-sans">
@@ -419,6 +421,40 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
               ))}
             </div>
           )}
+
+          {/* Remark Questions — Stacked full-width textareas right above Submit */}
+          {remarkQuestions.map((rq) => {
+            const cust = rq.customization || {};
+            const val = ratings[rq.id] ?? '';
+            return (
+              <div
+                key={rq.id}
+                className={`w-full p-4 rounded-2xl border transition-all ${
+                  isBgEnabled
+                    ? 'bg-white/80 backdrop-blur-md border-white/60 shadow-sm'
+                    : 'bg-white border-gray-200 shadow-sm'
+                }`}
+              >
+                <label className="block text-xs sm:text-sm font-bold text-gray-800 mb-1.5">
+                  {rq.question_text || rq.text || 'Remark'}
+                  {cust.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <textarea
+                  rows={cust.rows || 3}
+                  maxLength={cust.maxLength || 1000}
+                  placeholder={cust.placeholder || 'Write your detailed feedback here...'}
+                  value={val}
+                  onChange={e => onRatingChange(rq.id, e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 focus:bg-white focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-gray-800 outline-none transition resize-none"
+                />
+                {cust.maxLength && (
+                  <div className="text-[10px] sm:text-[11px] text-gray-400 text-right mt-1">
+                    {String(val).length}/{cust.maxLength}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* Validation Notice */}
           {validationWarning && (

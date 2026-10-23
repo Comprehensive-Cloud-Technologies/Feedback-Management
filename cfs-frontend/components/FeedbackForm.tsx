@@ -281,11 +281,19 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
     if (validationWarning) setValidationWarning('');
   };
 
-  const ratingQuestions = questions.filter(q => isRatingType(q.response_type));
+  const ratingQuestions = questions.filter(q => isRatingType(q.response_type) && !q.customization?.is_remark);
   const isAllRatingsAnswered = ratingQuestions.length === 0 || ratingQuestions.every(q => {
     const val = ratings[q.id];
     return val !== undefined && val !== null && val !== '';
   });
+
+  const requiredRemarks = questions.filter(q => q.customization?.is_remark && q.customization?.required);
+  const isAllRequiredRemarksFilled = requiredRemarks.every(q => {
+    const val = ratings[q.id];
+    return typeof val === 'string' && val.trim().length > 0;
+  });
+
+  const canSubmit = isAllRatingsAnswered && isAllRequiredRemarksFilled;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -296,9 +304,18 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
       return;
     }
 
-    // Soft warning check for required non-rating questions
+    // Validation check for required remarks
+    for (const q of requiredRemarks) {
+      const val = ratings[q.id];
+      if (typeof val !== 'string' || !val.trim()) {
+        setValidationWarning(`Please fill out the remark: "${q.question_text || q.text || 'Remark'}"`);
+        return;
+      }
+    }
+
+    // Soft warning check for required non-rating questions (excluding remarks already checked)
     for (const q of questions) {
-      if (!isRatingType(q.response_type) && q.customization?.required) {
+      if (!isRatingType(q.response_type) && !q.customization?.is_remark && q.customization?.required) {
         const val = ratings[q.id];
         const isBlank = val === undefined || val === null || val === '' ||
           (Array.isArray(val) && val.length === 0) ||
@@ -330,8 +347,9 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
     const responses: FeedbackResponse[] = questions.map(q => {
       const val = ratings[q.id];
       const qType = q.response_type || 'smiley_faces';
+      const isRemark = Boolean(q.customization?.is_remark);
 
-      if (isRatingType(qType)) {
+      if (isRatingType(qType) && !isRemark) {
         let ratingLabel = '';
         const opts = q.customization?.options;
         if (Array.isArray(opts)) {
@@ -366,6 +384,7 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
           question_text: q.question_text || q.text || 'Unknown Question',
           response_type: qType as any,
           answer: answerStr,
+          is_remark: isRemark,
           ...(otherText ? { other_text: otherText } : {})
         };
       }
@@ -507,7 +526,7 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
                 setCustomFieldValues={setCustomFieldValues}
                 validationWarning={validationWarning}
                 isSubmitting={isSubmitting}
-                isAllRatingsAnswered={isAllRatingsAnswered}
+                isAllRatingsAnswered={canSubmit}
                 onSubmit={handleSubmit}
                 onLogout={onLogout}
               />

@@ -122,6 +122,7 @@ export interface TextCustomization {
   maxLength?: number;
   rows?: number;
   required?: boolean;
+  is_remark?: boolean;
 }
 
 export interface DropdownCustomization {
@@ -156,7 +157,8 @@ export interface Question {
   text?: string; // Keep for backward compatibility
   branch_id?: number;
   response_type?: QuestionResponseType;
-  customization?: QuestionCustomization;
+  customization?: QuestionCustomization & { is_remark?: boolean };
+  is_remark?: boolean;
 }
 
 export interface FeedbackResponse {
@@ -168,6 +170,7 @@ export interface FeedbackResponse {
   response_type?: QuestionResponseType;
   answer?: string | string[]; // For non-rating questions (text, choice, dropdown)
   other_text?: string;        // Populated when "Other (please specify)" is used
+  is_remark?: boolean;
 }
 
 export interface FeedbackSubmission {

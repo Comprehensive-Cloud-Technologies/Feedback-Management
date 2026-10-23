@@ -32,6 +32,9 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
   isAllRatingsAnswered,
   onSubmit,
 }) => {
+  const normalQuestions = questions.filter(q => !q.customization?.is_remark);
+  const remarkQuestions = questions.filter(q => !!q.customization?.is_remark);
+
   return (
     <div className="flex-grow min-h-0 flex flex-col overflow-hidden relative w-full bg-[#0A0F1D] text-slate-100 font-sans">
       {/* Top Header Bar */}
@@ -87,7 +90,7 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
       {/* Main Scrollable Questions Area */}
       <div className="flex-grow min-h-0 overflow-y-auto px-3 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto space-y-3 pb-6">
-          {questions.map((q, idx) => {
+          {normalQuestions.map((q, idx) => {
             const val = ratings[q.id];
             const qType = q.response_type || 'smiley_faces';
             const isSmiley = qType === 'smiley_faces';
@@ -273,6 +276,36 @@ export const MidnightDarkThemeLayout: React.FC<ThemeLayoutProps> = ({
               ))}
             </div>
           )}
+
+          {/* Remark Questions — Stacked full-width textareas right above Submit */}
+          {remarkQuestions.map((rq) => {
+            const cust = rq.customization || {};
+            const val = ratings[rq.id] ?? '';
+            return (
+              <div
+                key={rq.id}
+                className="w-full p-4 rounded-xl border border-slate-700 bg-[#0E1629] shadow-sm transition-all"
+              >
+                <label className="block text-xs sm:text-sm font-bold text-slate-200 mb-1.5">
+                  {rq.question_text || rq.text || 'Remark'}
+                  {cust.required && <span className="text-cyan-400 ml-1 font-black">*</span>}
+                </label>
+                <textarea
+                  rows={cust.rows || 3}
+                  maxLength={cust.maxLength || 1000}
+                  placeholder={cust.placeholder || 'Enter your remarks here...'}
+                  value={val}
+                  onChange={e => onRatingChange(rq.id, e.target.value)}
+                  className="w-full px-3 py-2 text-xs sm:text-sm bg-[#141E36] border border-slate-700 focus:border-cyan-400 rounded-lg text-white placeholder:text-slate-500 outline-none resize-none transition-all"
+                />
+                {cust.maxLength && (
+                  <div className="text-[10px] sm:text-[11px] text-slate-500 text-right mt-1 font-mono">
+                    {String(val).length}/{cust.maxLength}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* Validation Notice */}
           {validationWarning && (

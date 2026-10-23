@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { FaEdit, FaTrash, FaSave, FaTimes } from 'react-icons/fa';
 import { getEndpoints } from '../constants';
 import { SearchInput, matchesSearch } from './SearchInput';
+import { calculateAverageRating } from '../utils/ratingUtils';
 
 interface Segment {
   id: number;
@@ -193,14 +194,10 @@ const AdminFeedback: React.FC = () => {
           });
 
           // Calculate overall rating from valid responses
-          const validRatings = responses.filter(r => typeof r.rating === 'number');
-          if (validRatings.length > 0) {
-            overallRating = validRatings.reduce((sum, r) => sum + r.rating, 0) / validRatings.length;
-            overallRating = Math.round(overallRating * 100) / 100;
-          }
+          overallRating = calculateAverageRating(responses);
         }
         // Handle single rating
-        else if (typeof fb.rating === 'number') {
+        else if (typeof fb.rating === 'number' && !isNaN(fb.rating)) {
           overallRating = fb.rating;
           if (fb.question_id) {
             const questionData = siteQuestions.find(q => String(q.id) === String(fb.question_id)) || {};
@@ -470,7 +467,7 @@ const AdminFeedback: React.FC = () => {
                   `"${(fb.user_department || '').replace(/"/g, '""')}"`,
                   `"${fb.meal_category || 'Other'}"`,
                   `"${(fb.user_suggestion || '').replace(/"/g, '""')}"`,
-                  `"${fb.overallRating}"`
+                  `"${fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating) ? Number(fb.overallRating).toFixed(1) : '-'}"`
                 ];
 
                 // Add custom field values
@@ -573,7 +570,11 @@ const AdminFeedback: React.FC = () => {
                   </span>
                 </td>
                 <td className="p-3 border">
-                  <span className="font-bold text-primary-700">{fb.overallRating}</span>
+                  <span className="font-bold text-primary-700">
+                    {fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating)
+                      ? Number(fb.overallRating).toFixed(1)
+                      : <span style={{ color: '#aaa' }}>-</span>}
+                  </span>
                 </td>
                 <td className="p-3 border">
                   <div className="flex gap-2">
@@ -670,19 +671,26 @@ const AdminFeedback: React.FC = () => {
                           if (Array.isArray(parsed)) displayAns = parsed.join(', ');
                         } catch {}
                       }
+                      const siteQuestions = questions[fb.site?.trim()] || [];
+                      const isRemark = Boolean(r.is_remark || siteQuestions.find(q => String(q.id) === String(r.question_id))?.customization?.is_remark);
                       return (
                         <li key={r.question_id || idx} className="p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                          <p className="font-medium text-gray-800 mb-1.5">{r.question_text || 'Unknown Question'}</p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-bold px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full">
-                              {displayAns || 'No response'}
-                            </span>
-                            {r.other_text && (
-                              <span className="text-xs text-gray-600 italic">
-                                (Detail: {r.other_text})
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <p className="font-medium text-gray-800">{r.question_text || 'Unknown Question'}</p>
+                            {isRemark && (
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+                                Remark
                               </span>
                             )}
                           </div>
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap bg-white p-2.5 rounded border border-gray-200">
+                            {displayAns || '-'}
+                          </div>
+                          {r.other_text && (
+                            <div className="text-xs text-gray-600 italic mt-1">
+                              (Detail: {r.other_text})
+                            </div>
+                          )}
                         </li>
                       );
                     }

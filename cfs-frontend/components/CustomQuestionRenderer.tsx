@@ -42,6 +42,7 @@ interface TextCustomization {
   maxLength?: number;
   rows?: number;
   required?: boolean;
+  is_remark?: boolean;
 }
 
 interface DropdownCustomization {

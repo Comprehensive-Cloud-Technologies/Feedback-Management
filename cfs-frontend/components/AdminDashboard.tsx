@@ -6,6 +6,7 @@ import { RATINGS, getEndpoints } from '../constants';
 import StatCard from './StatCard';
 import FeedbackChart from './FeedbackChart';
 import AverageRatingChart from './AverageRatingChart';
+import { isRatingQuestion, isRatingResponse, calculateAverageRating } from '../utils/ratingUtils';
 
 // Pie chart colors for rating levels (Poor, Needs Improvement, Average, Good)
 const PIE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
@@ -472,9 +473,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const segmentName = segment ? segment.name : 'Unknown';
 
       // Calculate overall rating
-      const ratingSum = fb.responses?.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) || 0;
-      const responseCount = fb.responses?.length || 0;
-      const overallRating = responseCount > 0 ? (ratingSum / responseCount).toFixed(2) : '0.00';
+      const avg = calculateAverageRating(fb.responses);
+      const overallRating = avg !== null ? avg.toFixed(2) : '-';
 
       // Format Timestamp
       const formattedTime = new Date(fb.timestamp).toLocaleString();
@@ -631,16 +631,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     let siteFeedback = filteredData;
 
     // Build question lookup map from questions array
-    const questionMap: Record<number | string, { id: number; text: string; emoji?: string; site?: string }> = {};
+    const questionMap: Record<string, Question> = {};
     questions.forEach(q => {
       const qId = String(q.id || (q as any).question_id || '');
       if (qId) {
-        questionMap[qId] = {
-          id: q.id || 0,
-          text: q.question_text || q.text || `Question ${qId}`,
-          emoji: q.emoji || '',
-          site: q.site || ''
-        };
+        questionMap[qId] = q;
       }
     });
 
@@ -648,8 +643,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     let maxRating = 0;
     siteFeedback.forEach(fb => {
       fb.responses?.forEach(r => {
-        const val = Number(r.rating);
-        if (val > maxRating) maxRating = val;
+        const qId = String(r.questionId || r.question_id || '');
+        const qObj = questionMap[qId];
+        if (isRatingResponse(r, qObj)) {
+          const val = Number(r.rating);
+          if (val > maxRating) maxRating = val;
+        }
       });
     });
     if (maxRating === 0) maxRating = 4; // fallback
@@ -703,23 +702,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       color: dynamicColors[i] || 'text-gray-500'
     }));
 
-    // Group feedback by question text
+    // Group feedback by question text (rating questions only)
     const stats: Record<string, { ratings: Record<number, number>; total: number; qText: string; emoji?: string }> = {};
 
     siteFeedback.forEach(fb => {
       fb.responses?.forEach(r => {
+        const qId = String(r.questionId || r.question_id || '');
+        const qObj = questionMap[qId];
+        if (!isRatingResponse(r, qObj)) return;
+
         let qText = r.question_text || '';
         let emoji = '';
 
-        if (!qText && r.questionId) {
-          const qData = questionMap[r.questionId] || questionMap[String(r.questionId)];
-          if (qData) { qText = qData.text; emoji = qData.emoji || ''; }
+        if (qObj) {
+          qText = qObj.question_text || (qObj as any).text || qText;
+          emoji = qObj.emoji || '';
         }
-        if (!qText && r.question_id) {
-          const qData = questionMap[r.question_id] || questionMap[String(r.question_id)];
-          if (qData) { qText = qData.text; emoji = qData.emoji || ''; }
-        }
-        if (!qText) { qText = `Question ${r.questionId || r.question_id || 'undefined'}`; }
+        if (!qText) { qText = `Question ${qId || 'undefined'}`; }
 
         if (!stats[qText]) {
           const initRatings: Record<number, number> = {};
@@ -735,10 +734,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       });
     });
 
-    // If no feedback but we have questions, create empty rows
+    // If no feedback but we have questions, create empty rows only for rating questions
     if (siteFeedback.length === 0 && questions.length > 0) {
-      questions.forEach(q => {
-        const qText = q.question_text || q.text || `Question ${q.id}`;
+      questions.filter(isRatingQuestion).forEach(q => {
+        const qText = q.question_text || (q as any).text || `Question ${q.id}`;
         if (!stats[qText]) {
           const initRatings: Record<number, number> = {};
           dynamicRatings.forEach(dr => initRatings[dr.level] = 0);

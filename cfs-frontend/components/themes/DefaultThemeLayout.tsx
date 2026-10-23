@@ -32,6 +32,8 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
   onSubmit,
 }) => {
   const isBgEnabled = !!formSettings?.bg_image_enabled && !!formSettings?.bg_image_data;
+  const normalQuestions = questions.filter(q => !q.customization?.is_remark);
+  const remarkQuestions = questions.filter(q => !!q.customization?.is_remark);
 
   return (
     <div className="flex-grow min-h-0 flex flex-col overflow-hidden relative w-full pt-1">
@@ -107,8 +109,8 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
       <div className="flex-grow min-h-0 w-full max-w-4xl mx-auto px-2 sm:px-4 py-0.5 flex flex-col overflow-hidden z-10">
         <div className="flex-grow min-h-0 overflow-y-auto overflow-x-hidden px-1 sm:px-2 scrollbar-hide">
           <div className="flex flex-col gap-1 sm:gap-1.5 py-0.5">
-            {questions.map((q) => {
-              const questionCount = questions.length;
+            {normalQuestions.map((q) => {
+              const questionCount = normalQuestions.length;
               const containerPadding =
                 questionCount <= 2 ? 'p-3 sm:p-4 md:p-5' :
                   questionCount <= 3 ? 'p-2 sm:p-3 md:p-4' :
@@ -309,6 +311,44 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                 )}
               </div>
             )}
+
+            {/* Remark Questions — Stacked full-width textareas immediately above Submit */}
+            {remarkQuestions.map((rq) => {
+              const cust = rq.customization || {};
+              const val = ratings[rq.id] ?? '';
+              return (
+                <div
+                  key={rq.id}
+                  className={`w-full p-3 sm:p-4 rounded-xl border transition-all flex-shrink-0 ${
+                    isBgEnabled
+                      ? 'bg-white/75 backdrop-blur-md border-white/60 shadow-sm'
+                      : 'bg-white border-gray-200 shadow-sm'
+                  }`}
+                >
+                  <label className="block text-xs sm:text-sm font-bold text-gray-800 mb-1.5">
+                    {rq.question_text || rq.text || 'Remark'}
+                    {cust.required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <textarea
+                    rows={cust.rows || 3}
+                    maxLength={cust.maxLength || 1000}
+                    placeholder={cust.placeholder || 'Write your detailed feedback here...'}
+                    value={val}
+                    onChange={e => onRatingChange(rq.id, e.target.value)}
+                    className={`w-full p-2.5 text-xs sm:text-sm rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/30 resize-none ${
+                      isBgEnabled
+                        ? 'bg-white/90 border border-white/80 text-gray-800 placeholder-gray-400'
+                        : 'bg-gray-50 border border-gray-300 text-gray-800 placeholder-gray-400 focus:bg-white'
+                    }`}
+                  />
+                  {cust.maxLength && (
+                    <div className="text-[10px] sm:text-[11px] text-gray-400 text-right mt-1">
+                      {String(val).length}/{cust.maxLength}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {/* Validation Warning Notice */}
             {validationWarning && (
