@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { FaEdit, FaTrash, FaSave, FaTimes } from 'react-icons/fa';
+import React, { useEffect, useState, useMemo } from 'react';
+import { FaEdit, FaTrash, FaSave, FaTimes, FaSync, FaFilePdf, FaFileCsv } from 'react-icons/fa';
 import { getEndpoints } from '../constants';
 import { SearchInput, matchesSearch } from './SearchInput';
+import { SearchableSelect, SearchableSelectOption } from './SearchableSelect';
 import { calculateAverageRating } from '../utils/ratingUtils';
 import { buildOrderedQuestionColumns, extractResponseValue, generateCsv, downloadCsv, CsvColumnDef } from '../utils/csvExportUtils';
+import { matchesTimeRange, TimeFrameType, TIME_RANGE_OPTIONS } from '../utils/timeRangeUtils';
 
 interface Segment {
   id: number;
@@ -46,6 +48,12 @@ const AdminFeedback: React.FC = () => {
   const [sites, setSites] = useState<any[]>([]);
   const [availableCanteens, setAvailableCanteens] = useState<string[]>([]);
 
+  // Time Range Filter State
+  const [timeFrame, setTimeFrame] = useState<TimeFrameType>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
   // Fetch Sites and Segments
   useEffect(() => {
     const fetchSitesAndSegments = async () => {
@@ -81,7 +89,7 @@ const AdminFeedback: React.FC = () => {
     fetchSitesAndSegments();
   }, []);
 
-  // Compute available canteens when site or segment changes
+  // Compute available canteens when site changes
   useEffect(() => {
     if (selectedSite === 'All Sites') {
       setAvailableCanteens([]);
@@ -99,9 +107,84 @@ const AdminFeedback: React.FC = () => {
       })
       .catch(() => setAvailableCanteens([]));
     setSelectedCanteen('All Canteens');
-  }, [selectedSite, selectedSegment]);
+  }, [selectedSite]);
 
-  // Filter Logic
+  // Filtered sites based on selected segment
+  const filteredSites = useMemo(() => {
+    if (selectedSegment === 'All Segments') return sites;
+    const segId = parseInt(selectedSegment);
+    return sites.filter((s: any) => s.segment_id === segId);
+  }, [sites, selectedSegment]);
+
+  // Handle cascading segment change
+  const handleSegmentChange = (newSegment: string) => {
+    setSelectedSegment(newSegment);
+    if (newSegment !== 'All Segments') {
+      const segId = parseInt(newSegment);
+      const siteMatches = sites.some((s: any) => s.location === selectedSite && s.segment_id === segId);
+      if (!siteMatches) {
+        setSelectedSite('All Sites');
+        setSelectedCanteen('All Canteens');
+      }
+    }
+  };
+
+  // Handle site change
+  const handleSiteChange = (newSite: string) => {
+    setSelectedSite(newSite);
+    setSelectedCanteen('All Canteens');
+  };
+
+  // Meal slots dynamically extracted and scoped
+  const allMealSlots = useMemo(() => {
+    return Array.from(new Set(feedback.map((fb: any) => fb.meal_category || 'Other'))).sort();
+  }, [feedback]);
+
+  const slotOptionsList = useMemo(() => {
+    if (selectedCanteen !== 'All Canteens' || selectedSite !== 'All Sites') {
+      const scoped = Array.from(new Set(
+        feedback
+          .filter((fb: any) => {
+            if (selectedSite !== 'All Sites' && fb.site !== selectedSite) return false;
+            if (selectedCanteen !== 'All Canteens' && (fb.canteen || fb.canteen_id) !== selectedCanteen) return false;
+            return true;
+          })
+          .map((fb: any) => fb.meal_category || 'Other')
+      )).sort();
+      return scoped.length > 0 ? scoped : allMealSlots;
+    }
+    return allMealSlots;
+  }, [feedback, selectedSite, selectedCanteen, allMealSlots]);
+
+  // Options for SearchableSelect
+  const segmentOptions: SearchableSelectOption[] = useMemo(() => [
+    { value: 'All Segments', label: 'All Segments' },
+    ...segments.map((s: Segment) => ({ value: String(s.id), label: s.name }))
+  ], [segments]);
+
+  const siteOptions: SearchableSelectOption[] = useMemo(() => [
+    { value: 'All Sites', label: 'All Sites' },
+    ...filteredSites.map((s: any) => ({ value: s.location, label: s.location }))
+  ], [filteredSites]);
+
+  const canteenOptions: SearchableSelectOption[] = useMemo(() => [
+    { value: 'All Canteens', label: 'All Canteens' },
+    ...availableCanteens.map(c => ({ value: c, label: c }))
+  ], [availableCanteens]);
+
+  const slotOptions: SearchableSelectOption[] = useMemo(() => [
+    { value: 'All Slots', label: 'All Slots' },
+    ...slotOptionsList.map(slot => ({ value: slot, label: slot }))
+  ], [slotOptionsList]);
+
+  // Reset meal slot if no longer present in slotOptionsList
+  useEffect(() => {
+    if (selectedMealSlot !== 'All Slots' && slotOptionsList.length > 0 && !slotOptionsList.includes(selectedMealSlot)) {
+      setSelectedMealSlot('All Slots');
+    }
+  }, [slotOptionsList, selectedMealSlot]);
+
+  // Filter Logic (Combines Segment, Site, Canteen, Slot, and Time Range)
   const filteredFeedback = feedback.filter((fb: any) => {
     // Segment filter: find segment ID from site and check if it matches
     if (selectedSegment !== 'All Segments') {
@@ -112,6 +195,7 @@ const AdminFeedback: React.FC = () => {
     if (selectedSite !== 'All Sites' && fb.site !== selectedSite) return false;
     if (selectedCanteen !== 'All Canteens' && (fb.canteen || fb.canteen_id) !== selectedCanteen) return false;
     if (selectedMealSlot !== 'All Slots' && (fb.meal_category || 'Other') !== selectedMealSlot) return false;
+    if (!matchesTimeRange(fb.timestamp, timeFrame, startDate, endDate, selectedYear)) return false;
     return true;
   });
 
@@ -328,8 +412,84 @@ const AdminFeedback: React.FC = () => {
     }
   };
 
+  const handleExportCsv = () => {
+    // Collect all unique custom field keys
+    const allCustomFieldKeys: string[] = [];
+    filteredFeedback.forEach((fb: any) => {
+      if (fb.custom_field_values && typeof fb.custom_field_values === 'object') {
+        Object.keys(fb.custom_field_values).forEach(k => {
+          if (!allCustomFieldKeys.includes(k)) allCustomFieldKeys.push(k);
+        });
+      }
+    });
+
+    // Collect active questions
+    const allActiveQuestions: any[] = [];
+    Object.values(questions).forEach((arr: any) => {
+      if (Array.isArray(arr)) {
+        arr.forEach(q => {
+          if (!allActiveQuestions.some(existing => String(existing.id) === String(q.id))) {
+            allActiveQuestions.push(q);
+          }
+        });
+      }
+    });
+
+    const questionColumns = buildOrderedQuestionColumns(
+      filteredFeedback,
+      allActiveQuestions,
+      availableCanteens,
+      undefined,
+      undefined
+    );
+
+    const baseColumns: CsvColumnDef<any>[] = [
+      { header: 'ID', getValue: fb => fb.id },
+      { header: 'Timestamp', getValue: fb => new Date(fb.timestamp).toLocaleString() },
+      { header: 'Site', getValue: fb => fb.site || '' },
+      { header: 'Canteen', getValue: fb => fb.canteen || fb.canteen_id || '' },
+      { header: 'Name', isUserText: true, getValue: fb => fb.user_name || '' },
+      { header: 'Employee ID', isUserText: true, getValue: fb => fb.user_employee_id || '' },
+      { header: 'Department', isUserText: true, getValue: fb => fb.user_department || '' },
+      { header: 'Meal Slot', isUserText: true, getValue: fb => fb.meal_category || 'Other' },
+      { header: 'Suggestion', isUserText: true, getValue: fb => fb.user_suggestion || '' },
+      {
+        header: 'Overall Rating',
+        getValue: fb => {
+          const avg = fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating)
+            ? Number(fb.overallRating).toFixed(1)
+            : '-';
+          return avg;
+        }
+      },
+      ...allCustomFieldKeys.map(cfk => ({
+        header: `[Field] ${fieldsMap[cfk] || (cfk.startsWith('cf_') ? cfk : cfk.replace(/([A-Z])/g, ' $1').trim())}`,
+        isUserText: true,
+        getValue: (fb: any) => {
+          const val = fb.custom_field_values ? fb.custom_field_values[cfk] : undefined;
+          if (val === undefined || val === null) return '';
+          return Array.isArray(val) ? val.join('; ') : String(val);
+        }
+      }))
+    ];
+
+    const questionColDefs: CsvColumnDef<any>[] = questionColumns.map(qCol => ({
+      header: `[Q] ${qCol.header}`,
+      isUserText: !qCol.isRating,
+      getValue: fb => {
+        const resp = (fb.responses || []).find((r: any) => String(r.question_id ?? r.questionId ?? '') === qCol.id);
+        const { value } = extractResponseValue(resp);
+        return value;
+      }
+    }));
+
+    const allColumns = [...baseColumns, ...questionColDefs];
+    const csvString = generateCsv(filteredFeedback, allColumns);
+    downloadCsv('feedback_submissions.csv', csvString);
+  };
+
   return (
-    <div className="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-xl mt-6">
+    <div className="w-full max-w-7xl mx-auto bg-white p-3 sm:p-5 md:p-6 rounded-xl shadow-xl mt-3 sm:mt-6 min-w-0 overflow-hidden">
       {/* Toast Notification Container in Top-Right Corner */}
       <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
         {notification && (
@@ -349,182 +509,221 @@ const AdminFeedback: React.FC = () => {
         )}
       </div>
 
-      <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-lg py-3 px-4 mb-6 shadow flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold text-white whitespace-nowrap">Manage Feedback</h2>
-          {searchQuery.trim() && (
-            <span className="text-xs bg-white/20 text-white font-semibold px-2 py-0.5 rounded-full">
-              Showing {displayFeedback.length} of {filteredFeedback.length}
+      <div className="w-full bg-gradient-to-r from-primary-600 to-primary-400 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 shadow-md flex flex-col gap-3 min-w-0">
+        {/* Top Actions Row: Title + Record Count on Left, Search + Buttons on Right */}
+        <div className="flex flex-col min-[900px]:flex-row items-stretch min-[900px]:items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight whitespace-nowrap">Manage Feedback</h2>
+            <span className="text-xs bg-white/20 text-white font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">
+              {searchQuery.trim()
+                ? `Showing ${displayFeedback.length} of ${filteredFeedback.length}`
+                : `${filteredFeedback.length} ${filteredFeedback.length === 1 ? 'submission' : 'submissions'}`}
             </span>
-          )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-start min-[900px]:justify-end">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search feedback..."
+              className="w-full sm:w-44 min-[900px]:w-48 lg:w-56"
+            />
+
+            <button
+              type="button"
+              className="bg-white text-primary-700 hover:bg-gray-100 font-bold px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs shadow-xs flex items-center gap-1.5 transition-colors whitespace-nowrap h-[36px] sm:h-[38px] cursor-pointer"
+              onClick={() => fetchFeedback()}
+              title="Refresh Feedback"
+            >
+              <FaSync size={12} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              type="button"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs shadow-xs flex items-center gap-1.5 transition-colors whitespace-nowrap h-[36px] sm:h-[38px] cursor-pointer"
+              onClick={() => window.print()}
+              title="Export as PDF"
+            >
+              <FaFilePdf size={12} />
+              <span>Export PDF</span>
+            </button>
+
+            <button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs shadow-xs flex items-center gap-1.5 transition-colors whitespace-nowrap h-[36px] sm:h-[38px] cursor-pointer"
+              onClick={handleExportCsv}
+              title="Export as CSV"
+            >
+              <FaFileCsv size={12} />
+              <span>Export CSV ({filteredFeedback.length})</span>
+            </button>
+          </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 items-center flex-1 justify-center md:justify-end">
-          <select
-            value={selectedSegment}
-            onChange={e => setSelectedSegment(e.target.value)}
-            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
-          >
-            <option value="All Segments">All Segments</option>
-            {segments.map((s: Segment) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+        {/* Filters Row: SINGLE LINE on desktop & large tablets (min-[900px]:grid-cols-5) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 min-[900px]:grid-cols-5 gap-2 sm:gap-2.5 items-center w-full min-w-0">
+          <div className="w-full min-w-0">
+            <SearchableSelect
+              variant="header-bar"
+              options={segmentOptions}
+              value={selectedSegment}
+              onChange={handleSegmentChange}
+              placeholder="All Segments"
+              clearable={true}
+              clearValue="All Segments"
+            />
+          </div>
 
-          <select
-            value={selectedSite}
-            onChange={e => setSelectedSite(e.target.value)}
-            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
-          >
-            <option value="All Sites">All Sites</option>
-            {sites.map((s: any) => <option key={s.location} value={s.location}>{s.location}</option>)}
-          </select>
+          <div className="w-full min-w-0">
+            <SearchableSelect
+              variant="header-bar"
+              options={siteOptions}
+              value={selectedSite}
+              onChange={handleSiteChange}
+              placeholder="All Sites"
+              clearable={true}
+              clearValue="All Sites"
+            />
+          </div>
 
-          <select
-            value={selectedCanteen}
-            onChange={e => setSelectedCanteen(e.target.value)}
-            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
-            disabled={selectedSite === 'All Sites'}
-          >
-            <option value="All Canteens">All Canteens</option>
-            {availableCanteens.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <div className="w-full min-w-0">
+            <SearchableSelect
+              variant="header-bar"
+              options={canteenOptions}
+              value={selectedCanteen}
+              onChange={setSelectedCanteen}
+              placeholder="All Canteens"
+              disabled={selectedSite === 'All Sites'}
+              clearable={true}
+              clearValue="All Canteens"
+            />
+          </div>
 
-          {/* Meal Slot Filter */}
-          <select
-            value={selectedMealSlot}
-            onChange={e => setSelectedMealSlot(e.target.value)}
-            className="px-2 py-1.5 rounded text-sm min-w-[120px]"
-          >
-            <option value="All Slots">All Slots</option>
-            {uniqueMealSlots.map((slot: string) => <option key={slot} value={slot}>{slot}</option>)}
-          </select>
+          <div className="w-full min-w-0">
+            <SearchableSelect
+              variant="header-bar"
+              options={slotOptions}
+              value={selectedMealSlot}
+              onChange={setSelectedMealSlot}
+              placeholder="All Slots"
+              clearable={true}
+              clearValue="All Slots"
+            />
+          </div>
 
-          {/* Search beside Refresh */}
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search feedback..."
-            className="w-full sm:w-56"
-          />
+          <div className="w-full min-w-0">
+            <SearchableSelect
+              variant="header-bar"
+              options={TIME_RANGE_OPTIONS}
+              value={timeFrame}
+              onChange={(val) => setTimeFrame(val as TimeFrameType)}
+              placeholder="Lifetime"
+              clearable={true}
+              clearValue="all"
+            />
+          </div>
+        </div>
 
-          <button
-            className="bg-white text-primary-600 hover:bg-gray-100 px-3 py-1.5 rounded font-bold text-xs shadow transition-colors whitespace-nowrap"
-            onClick={() => fetchFeedback()}
-          >
-            Refresh
-          </button>
+        {/* Secondary row: Extra Date Inputs for Yearly / Single Date / Custom Range */}
+        {(timeFrame === 'yearly' || timeFrame === 'single_date' || timeFrame === 'custom') && (
+          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-white/20 animate-fade-in">
+            {timeFrame === 'yearly' && (
+              <div className="flex items-center gap-2 bg-white/15 px-3 py-1.5 rounded-xl border border-white/25 text-white text-xs">
+                <span className="font-semibold text-white/90">Select Year:</span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="bg-white text-gray-800 font-bold px-2.5 py-1 rounded-lg text-xs outline-none cursor-pointer shadow-xs"
+                >
+                  {[2023, 2024, 2025, 2026, 2027].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-          {/* Export PDF Button */}
-          <button
-            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded font-bold text-xs shadow transition-colors"
-            onClick={() => window.print()}
-          >
-            Export PDF
-          </button>
+            {timeFrame === 'single_date' && (
+              <div className="flex items-center gap-2 bg-white/15 px-3 py-1.5 rounded-xl border border-white/25 text-white text-xs">
+                <span className="font-semibold text-white/90">Select Date:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-white text-gray-800 font-bold px-2.5 py-1 rounded-lg text-xs outline-none shadow-xs"
+                />
+                {startDate && (
+                  <button
+                    type="button"
+                    onClick={() => setStartDate('')}
+                    className="text-white/80 hover:text-white text-xs underline ml-1 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
 
-          <button
-            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded font-bold text-xs shadow transition-colors"
-            onClick={() => {
-              // Collect all unique custom field keys
-              const allCustomFieldKeys: string[] = [];
-              filteredFeedback.forEach((fb: any) => {
-                if (fb.custom_field_values && typeof fb.custom_field_values === 'object') {
-                  Object.keys(fb.custom_field_values).forEach(k => {
-                    if (!allCustomFieldKeys.includes(k)) allCustomFieldKeys.push(k);
-                  });
-                }
-              });
+            {timeFrame === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2.5 bg-white/15 px-3 py-1.5 rounded-xl border border-white/25 text-white text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white/90">From:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="bg-white text-gray-800 font-bold px-2.5 py-1 rounded-lg text-xs outline-none shadow-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white/90">To:</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="bg-white text-gray-800 font-bold px-2.5 py-1 rounded-lg text-xs outline-none shadow-xs"
+                  />
+                </div>
+                {startDate && endDate && new Date(startDate) > new Date(endDate) && (
+                  <span className="bg-red-500/90 text-white font-bold px-2 py-0.5 rounded text-xs animate-pulse">
+                    Start date cannot be after end date
+                  </span>
+                )}
+                {(startDate || endDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setStartDate(''); setEndDate(''); }}
+                    className="text-white/80 hover:text-white text-xs underline ml-1 cursor-pointer"
+                  >
+                    Clear Range
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-              // Collect active questions
-              const allActiveQuestions: any[] = [];
-              Object.values(questions).forEach((arr: any) => {
-                if (Array.isArray(arr)) {
-                  arr.forEach(q => {
-                    if (!allActiveQuestions.some(existing => String(existing.id) === String(q.id))) {
-                      allActiveQuestions.push(q);
-                    }
-                  });
-                }
-              });
-
-              const questionColumns = buildOrderedQuestionColumns(
-                filteredFeedback,
-                allActiveQuestions,
-                availableCanteens,
-                undefined,
-                undefined
-              );
-
-              const baseColumns: CsvColumnDef<any>[] = [
-                { header: 'ID', getValue: fb => fb.id },
-                { header: 'Timestamp', getValue: fb => new Date(fb.timestamp).toLocaleString() },
-                { header: 'Site', getValue: fb => fb.site || '' },
-                { header: 'Canteen', getValue: fb => fb.canteen || fb.canteen_id || '' },
-                { header: 'Name', isUserText: true, getValue: fb => fb.user_name || '' },
-                { header: 'Employee ID', isUserText: true, getValue: fb => fb.user_employee_id || '' },
-                { header: 'Department', isUserText: true, getValue: fb => fb.user_department || '' },
-                { header: 'Meal Slot', isUserText: true, getValue: fb => fb.meal_category || 'Other' },
-                { header: 'Suggestion', isUserText: true, getValue: fb => fb.user_suggestion || '' },
-                {
-                  header: 'Overall Rating',
-                  getValue: fb => {
-                    const avg = fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating)
-                      ? Number(fb.overallRating).toFixed(1)
-                      : '-';
-                    return avg;
-                  }
-                },
-                ...allCustomFieldKeys.map(cfk => ({
-                  header: `[Field] ${fieldsMap[cfk] || (cfk.startsWith('cf_') ? cfk : cfk.replace(/([A-Z])/g, ' $1').trim())}`,
-                  isUserText: true,
-                  getValue: (fb: any) => {
-                    const val = fb.custom_field_values ? fb.custom_field_values[cfk] : undefined;
-                    if (val === undefined || val === null) return '';
-                    return Array.isArray(val) ? val.join('; ') : String(val);
-                  }
-                }))
-              ];
-
-              const questionColDefs: CsvColumnDef<any>[] = questionColumns.map(qCol => ({
-                header: `[Q] ${qCol.header}`,
-                isUserText: !qCol.isRating,
-                getValue: fb => {
-                  const resp = (fb.responses || []).find((r: any) => String(r.question_id ?? r.questionId ?? '') === qCol.id);
-                  const { value } = extractResponseValue(resp);
-                  return value;
-                }
-              }));
-
-              const allColumns = [...baseColumns, ...questionColDefs];
-              const csvString = generateCsv(filteredFeedback, allColumns);
-              downloadCsv('feedback_submissions.csv', csvString);
-            }}
-          >
-            Export CSV ({filteredFeedback.length})
-          </button>
-
-          {/* Print Styles for PDF Export */}
-          <style>{`
-            @media print {
-              @page { size: A4 landscape; margin: 10mm; }
-              body * { visibility: hidden; }
-              .feedback-table-container, .feedback-table-container * { visibility: visible; }
-              .feedback-table-container { 
-                position: absolute; 
-                left: 0; 
-                top: 0; 
-                width: 100%; 
-                overflow: visible !important;
-              }
-              /* Hide "Actions" column (last column) */
-              th:last-child, td:last-child { display: none; }
-              /* Table styling for print */
-              table { width: 100%; border-collapse: collapse; font-size: 9px; }
-              th, td { border: 1px solid #333 !important; padding: 3px; text-align: left; }
-              thead tr { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
+        {/* Print Styles for PDF Export */}
+        <style>{`
+          @media print {
+            @page { size: A4 landscape; margin: 10mm; }
+            body * { visibility: hidden; }
+            .feedback-table-container, .feedback-table-container * { visibility: visible; }
+            .feedback-table-container { 
+              position: absolute; 
+              left: 0; 
+              top: 0; 
+              width: 100%; 
+              overflow: visible !important;
             }
-          `}</style>
-        </div>
+            /* Hide "Actions" column (last column) */
+            th:last-child, td:last-child { display: none; }
+            /* Table styling for print */
+            table { width: 100%; border-collapse: collapse; font-size: 9px; }
+            th, td { border: 1px solid #333 !important; padding: 3px; text-align: left; }
+            thead tr { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
+          }
+        `}</style>
       </div>
       <div className="overflow-x-auto feedback-table-container">
         <table className="w-full border-collapse mb-6 text-sm">

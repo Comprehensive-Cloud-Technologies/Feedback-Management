@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import QRCode from 'react-qr-code';
-import { getEndpoints, FRONTEND_URL, API_URL } from '../constants';
+import { getEndpoints, FRONTEND_URL, API_URL, QR_FOOTER_WEBSITE } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { FaPrint } from 'react-icons/fa';
 import { SearchableSelect } from './SearchableSelect';
@@ -531,7 +531,7 @@ const QRCodePrintPage: React.FC = () => {
 
                 {/* Website URL */}
                 <div style={{ marginTop: '15px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '11pt', color: '#999', fontFamily: 'sans-serif', fontWeight: 500, margin: 0 }}>www.catalystsolutions.eco</p>
+                  <p style={{ fontSize: '11pt', color: '#999', fontFamily: 'sans-serif', fontWeight: 500, margin: 0 }}>{QR_FOOTER_WEBSITE}</p>
                 </div>
               </div>
             </div>
@@ -562,7 +562,7 @@ const QRCodePrintPage: React.FC = () => {
                       <QRCode value={getQRCodeUrl(site.location, canteen)} size={280} />
                     </div>
                     <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
-                    <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
+                    <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>{QR_FOOTER_WEBSITE}</p>
                   </div>
                 ))
               ) : (
@@ -577,7 +577,7 @@ const QRCodePrintPage: React.FC = () => {
                     <QRCode value={getQRCodeUrl(site.location)} size={280} />
                   </div>
                   <p className="text-gray-500 font-semibold text-xs mt-6 uppercase tracking-widest">Scan to provide feedback</p>
-                  <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>www.catalystsolutions.eco</p>
+                  <p style={{ fontSize: '10pt', color: '#999', fontWeight: 500, marginTop: '10px' }}>{QR_FOOTER_WEBSITE}</p>
                 </div>
               )}
             </React.Fragment>

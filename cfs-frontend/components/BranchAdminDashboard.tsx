@@ -8,9 +8,10 @@ import RatingFace from './RatingFace';
 import StatCard from './StatCard';
 import AverageRatingChart from './AverageRatingChart';
 import { FeedbackSubmission, Question, RatingLevel, Canteen, MealSlot } from '../types';
-import { RATINGS, getEndpoints, FRONTEND_URL, RATING_LABELS } from '../constants';
+import { RATINGS, getEndpoints, FRONTEND_URL, RATING_LABELS, QR_FOOTER_WEBSITE } from '../constants';
 import { isRatingQuestion, isRatingResponse, calculateAverageRating, formatAverageRating } from '../utils/ratingUtils';
 import { buildOrderedQuestionColumns, extractResponseValue, generateCsv, downloadCsv, CsvColumnDef } from '../utils/csvExportUtils';
+import { matchesTimeRange, TimeFrameType, TIME_RANGE_OPTIONS } from '../utils/timeRangeUtils';
 import catalystLogo from '../src/images/clogo.png';
 
 const toSlug = (name: string) => {
@@ -56,7 +57,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
     // Filters
     const [selectedCanteen, setSelectedCanteen] = useState<string>('All Canteens');
     const [selectedMealSlot, setSelectedMealSlot] = useState<string>('All Slots');
-    const [timeFrame, setTimeFrame] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'single_date' | 'all'>('all');
+    const [timeFrame, setTimeFrame] = useState<TimeFrameType>('all');
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -203,44 +204,13 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
             if (selectedMealSlot !== 'All Slots' && fbSlot !== selectedMealSlot) return false;
 
             // Time Frame Filter
-            if (timeFrame !== 'all') {
-                const date = new Date(fb.timestamp);
-                const now = new Date();
-
-                if (timeFrame === 'daily' && date.toDateString() !== now.toDateString()) return false;
-
-                if (timeFrame === 'weekly') {
-                    const diff = now.getTime() - date.getTime();
-                    if (diff / (1000 * 3600 * 24) > 7) return false;
-                }
-
-                if (timeFrame === 'monthly') {
-                    const diff = now.getTime() - date.getTime();
-                    if (diff / (1000 * 3600 * 24) > 30) return false;
-                }
-
-                if (timeFrame === 'yearly' && date.getFullYear() !== selectedYear) return false;
-
-                if (timeFrame === 'custom') {
-                    if (startDate && new Date(fb.timestamp) < new Date(startDate)) return false;
-                    if (endDate) {
-                        const end = new Date(endDate);
-                        end.setHours(23, 59, 59, 999);
-                        if (new Date(fb.timestamp) > end) return false;
-                    }
-                }
-
-                if (timeFrame === 'single_date') {
-                    if (!startDate) return true; // Show all if no date selected yet, or handle as 'none'
-                    const dateStr = new Date(fb.timestamp).toDateString();
-                    const selectedDateStr = new Date(startDate).toDateString();
-                    if (dateStr !== selectedDateStr) return false;
-                }
+            if (!matchesTimeRange(fb.timestamp, timeFrame, startDate, endDate, selectedYear)) {
+                return false;
             }
 
             return true;
         }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    }, [feedbackData, selectedCanteen, selectedMealSlot, timeFrame]);
+    }, [feedbackData, selectedCanteen, selectedMealSlot, timeFrame, startDate, endDate, selectedYear]);
 
 
 
@@ -1365,7 +1335,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                         ctx.drawImage(img, 0, 0);
                                                     }
                                                     const catalystLogoUrl = new URL(catalystLogo, window.location.origin).href;
-                                                    resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white; position: relative;"><div style="position: absolute; top: 30px; left: 40px; right: 40px; display: flex; justify-content: space-between; align-items: center;"><img src="${catalystLogoUrl}" style="height: 40px; object-fit: contain;">${branchLogo ? `<img src="${branchLogo}" style="height: 50px; object-fit: contain; max-width: 170px;">` : ''}</div><div style="font-weight: 900; font-size: 28px; color: #1a1a1a; margin-bottom: 20px;">We Value Your Feedback</div><img src="${canvas.toDataURL()}" style="width: 280px; height: 280px; border: 3px solid #333; padding: 10px; border-radius: 8px; background: white;"><div style="margin-top: 20px; color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">Scan to provide feedback</div><div style="margin-top: 12px; color: #999; font-size: 11px; font-weight: 500;">www.catalystsolutions.eco</div></div>`);
+                                                    resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white; position: relative;"><div style="position: absolute; top: 30px; left: 40px; right: 40px; display: flex; justify-content: space-between; align-items: center;"><img src="${catalystLogoUrl}" style="height: 40px; object-fit: contain;">${branchLogo ? `<img src="${branchLogo}" style="height: 50px; object-fit: contain; max-width: 170px;">` : ''}</div><div style="font-weight: 900; font-size: 28px; color: #1a1a1a; margin-bottom: 20px;">We Value Your Feedback</div><img src="${canvas.toDataURL()}" style="width: 280px; height: 280px; border: 3px solid #333; padding: 10px; border-radius: 8px; background: white;"><div style="margin-top: 20px; color: #666; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">Scan to provide feedback</div><div style="margin-top: 12px; color: #999; font-size: 11px; font-weight: 500;">${QR_FOOTER_WEBSITE}</div></div>`);
                                                 };
                                                 img.onerror = () => {
                                                     resolve(`<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; width: 210mm; height: 297mm; padding: 40px; box-sizing: border-box; background: white;"><div style="font-size: 18px; color: #ef4444;">Failed to load QR for ${c.name}</div></div>`);
@@ -1477,7 +1447,7 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                                     <h1>We Value Your Feedback</h1>
                                                                     <div class="qr" id="qr-container"></div>
                                                                     <p class="scan-text">Scan to provide feedback</p>
-                                                                    <p class="website">www.catalystsolutions.eco</p>
+                                                                    <p class="website">${QR_FOOTER_WEBSITE}</p>
                                                                 </div>
                                                                 <script>
                                                                     window.onload = function() {

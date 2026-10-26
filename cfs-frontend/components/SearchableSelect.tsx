@@ -13,7 +13,10 @@ export interface SearchableSelectProps {
   placeholder?: string;
   disabled?: boolean;
   clearable?: boolean;
+  clearValue?: string;
   className?: string;
+  triggerClassName?: string;
+  variant?: 'default' | 'header-bar';
   id?: string;
   name?: string;
   required?: boolean;
@@ -26,7 +29,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   placeholder = 'Select an option...',
   disabled = false,
   clearable = false,
+  clearValue,
   className = '',
+  triggerClassName = '',
+  variant = 'default',
   id,
   name,
   required = false,
@@ -106,7 +112,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onChange('');
+    onChange(clearValue !== undefined ? clearValue : '');
     setSearchQuery('');
     setHighlightedIndex(-1);
   };
@@ -188,13 +194,22 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             handleOpen();
           }
         }}
-        className={`w-full min-h-[44px] px-3.5 py-2 flex items-center justify-between gap-2 bg-white border rounded-xl cursor-pointer select-none transition-all text-sm ${
-          disabled
-            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-            : isOpen
-            ? 'border-primary-500 ring-2 ring-primary-100 shadow-xs'
-            : 'border-gray-300 hover:border-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100'
-        }`}
+        className={variant === 'header-bar'
+          ? `w-full h-[44px] min-h-[44px] px-3 py-2 flex items-center justify-between gap-1.5 bg-white text-gray-800 border rounded-xl cursor-pointer select-none transition-all text-xs sm:text-sm font-semibold shadow-xs ${
+              disabled
+                ? 'bg-white/60 text-gray-400 border-gray-200/60 cursor-not-allowed shadow-none'
+                : isOpen
+                ? 'border-primary-500 ring-2 ring-primary-200/80'
+                : 'border-gray-200/90 hover:border-gray-300 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200'
+            } ${triggerClassName}`
+          : `w-full min-h-[44px] px-3.5 py-2 flex items-center justify-between gap-2 bg-white border rounded-xl cursor-pointer select-none transition-all text-sm ${
+              disabled
+                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                : isOpen
+                ? 'border-primary-500 ring-2 ring-primary-100 shadow-xs'
+                : 'border-gray-300 hover:border-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100'
+            } ${triggerClassName}`
+        }
         role="combobox"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -209,7 +224,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         </span>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {clearable && selectedOption && !disabled && (
+          {clearable && !disabled && (clearValue !== undefined ? value !== clearValue && Boolean(value) : Boolean(value)) && (
             <button
               type="button"
               onClick={handleClear}
@@ -229,7 +244,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
         <div
-          className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl z-[100] overflow-hidden animate-fade-in flex flex-col"
+          className="absolute left-0 top-full mt-1.5 min-w-full w-max max-w-[min(340px,calc(100vw-32px))] bg-white border border-gray-200 rounded-xl shadow-2xl z-[100] overflow-hidden animate-fade-in flex flex-col"
           style={{ maxHeight: '320px' }}
         >
           {/* Search Input Filter */}

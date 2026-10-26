@@ -175,8 +175,8 @@ const App: React.FC = () => {
             </div>
           )}
 
-        <div className={`flex-1 transition-all duration-300 min-h-screen flex flex-col ${window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin-login' ? (isCollapsed ? 'ml-20' : 'ml-64') : 'ml-0'}`}>
-          <div className="w-full flex-grow">
+        <div className={`flex-1 min-w-0 transition-all duration-300 min-h-screen flex flex-col ${window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin-login' ? (isCollapsed ? 'ml-20' : 'ml-64') : 'ml-0'}`}>
+          <div className="w-full min-w-0 flex-grow">
             {children}
           </div>
           {/* Footer inside content area to align correctly */}

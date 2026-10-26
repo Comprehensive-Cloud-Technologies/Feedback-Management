@@ -86,3 +86,7 @@ export const RATING_LABELS: Record<number, string> = {
   3: 'Average',
   4: 'Good'
 };
+
+/** Visible footer website printed/previewed on QR posters */
+export const QR_FOOTER_WEBSITE = 'www.catalystgroupindia.com';
+
