@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getEndpoints } from '../constants';
 import { SearchInput, matchesSearch } from './SearchInput';
+import { SearchableSelect } from './SearchableSelect';
 
 interface BranchAdmin {
 	id: number;
@@ -17,6 +18,7 @@ interface Site {
 const AdminBranchAdmins: React.FC = () => {
 	const [sites, setSites] = useState<Site[]>([]);
 	const [admins, setAdmins] = useState<BranchAdmin[]>([]);
+	const [selectedSite, setSelectedSite] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [error, setError] = useState<string | null>(null);
@@ -68,7 +70,7 @@ const AdminBranchAdmins: React.FC = () => {
 	useEffect(() => { fetchData(); }, []);
 
 	const handleCreate = async () => {
-		const site = (document.getElementById('adminSiteSelect') as HTMLSelectElement).value;
+		const site = selectedSite.trim();
 		const username = (document.getElementById('adminUsername') as HTMLInputElement).value.trim();
 		const password = (document.getElementById('adminPassword') as HTMLInputElement).value;
 
@@ -87,6 +89,7 @@ const AdminBranchAdmins: React.FC = () => {
 			});
 
 			if (res.ok) {
+				setSelectedSite('');
 				(document.getElementById('adminUsername') as HTMLInputElement).value = '';
 				(document.getElementById('adminPassword') as HTMLInputElement).value = '';
 				await fetchData();
@@ -212,10 +215,14 @@ const AdminBranchAdmins: React.FC = () => {
 					<div className="space-y-4">
 						<div>
 							<label className="block text-xs font-bold text-gray-500 uppercase mb-1">Select Branch</label>
-							<select id="adminSiteSelect" className="w-full border p-2 rounded text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-								<option value="">-- Choose Site --</option>
-								{sites.map(s => <option key={s.id} value={s.location}>{s.location}</option>)}
-							</select>
+							<SearchableSelect
+								id="adminSiteSelect"
+								options={sites.map(s => ({ value: s.location, label: s.location }))}
+								value={selectedSite}
+								onChange={setSelectedSite}
+								placeholder="-- Choose Site --"
+								clearable={true}
+							/>
 						</div>
 						<div>
 							<label className="block text-xs font-bold text-gray-500 uppercase mb-1">Username</label>

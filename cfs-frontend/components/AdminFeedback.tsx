@@ -3,6 +3,7 @@ import { FaEdit, FaTrash, FaSave, FaTimes } from 'react-icons/fa';
 import { getEndpoints } from '../constants';
 import { SearchInput, matchesSearch } from './SearchInput';
 import { calculateAverageRating } from '../utils/ratingUtils';
+import { buildOrderedQuestionColumns, extractResponseValue, generateCsv, downloadCsv, CsvColumnDef } from '../utils/csvExportUtils';
 
 interface Segment {
   id: number;
@@ -424,10 +425,6 @@ const AdminFeedback: React.FC = () => {
           <button
             className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded font-bold text-xs shadow transition-colors"
             onClick={() => {
-              let csvContent = 'data:text/csv;charset=utf-8,';
-              // Add BOM for Excel correct display of characters
-              csvContent += '\uFEFF';
-
               // Collect all unique custom field keys
               const allCustomFieldKeys: string[] = [];
               filteredFeedback.forEach((fb: any) => {
@@ -438,80 +435,69 @@ const AdminFeedback: React.FC = () => {
                 }
               });
 
-              // Collect all unique question texts across all feedback to create dynamic columns
-              const allQuestionTexts: string[] = [];
-              filteredFeedback.forEach((fb: any) => {
-                (fb.responses || []).forEach((r: any) => {
-                  const qText = r.question_text || 'Unknown Question';
-                  if (!allQuestionTexts.includes(qText)) allQuestionTexts.push(qText);
-                });
-              });
-
-              // Build header row with dynamic custom field and question columns
-              const headerCols = ['"ID"', '"Timestamp"', '"Site"', '"Canteen"', '"Name"', '"Employee ID"', '"Department"', '"Meal Slot"', '"Suggestion"', '"Overall Rating"'];
-              allCustomFieldKeys.forEach(cfk => {
-                const label = fieldsMap[cfk] || (cfk.startsWith('cf_') ? cfk : cfk.replace(/([A-Z])/g, ' $1').trim());
-                headerCols.push(`"[Field] ${label.replace(/"/g, '""')}"`);
-              });
-              allQuestionTexts.forEach(qt => headerCols.push(`"[Q] ${qt.replace(/"/g, '""')}"`));
-              csvContent += headerCols.join(',') + '\r\n';
-
-              filteredFeedback.forEach((fb: any) => {
-                const row = [
-                  `"${fb.id}"`,
-                  `"${new Date(fb.timestamp).toLocaleString()}"`,
-                  `"${fb.site}"`,
-                  `"${fb.canteen || fb.canteen_id}"`,
-                  `"${(fb.user_name || '').replace(/"/g, '""')}"`,
-                  `"${(fb.user_employee_id || '').replace(/"/g, '""')}"`,
-                  `"${(fb.user_department || '').replace(/"/g, '""')}"`,
-                  `"${fb.meal_category || 'Other'}"`,
-                  `"${(fb.user_suggestion || '').replace(/"/g, '""')}"`,
-                  `"${fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating) ? Number(fb.overallRating).toFixed(1) : '-'}"`
-                ];
-
-                // Add custom field values
-                const cfValues = fb.custom_field_values || {};
-                allCustomFieldKeys.forEach(cfk => {
-                  const val = cfValues[cfk];
-                  const displayVal = Array.isArray(val) ? val.join('; ') : (val !== undefined && val !== null ? String(val) : '');
-                  row.push(`"${displayVal.replace(/"/g, '""')}"`);
-                });
-
-                // Add each question's rating or answer in its own column
-                const responsesMap: Record<string, any> = {};
-                (fb.responses || []).forEach((r: any) => {
-                  const qText = r.question_text || 'Unknown Question';
-                  responsesMap[qText] = r;
-                });
-                allQuestionTexts.forEach(qt => {
-                  const r = responsesMap[qt];
-                  if (!r) {
-                    row.push('""');
-                  } else if (typeof r.rating === 'number' && !isNaN(r.rating) && r.rating !== null) {
-                    row.push(`"${r.rating}"`);
-                  } else {
-                    let ans = r.answer || '';
-                    if (typeof ans === 'string' && ans.startsWith('[') && ans.endsWith(']')) {
-                      try {
-                        const parsed = JSON.parse(ans);
-                        if (Array.isArray(parsed)) ans = parsed.join('; ');
-                      } catch {}
+              // Collect active questions
+              const allActiveQuestions: any[] = [];
+              Object.values(questions).forEach((arr: any) => {
+                if (Array.isArray(arr)) {
+                  arr.forEach(q => {
+                    if (!allActiveQuestions.some(existing => String(existing.id) === String(q.id))) {
+                      allActiveQuestions.push(q);
                     }
-                    if (r.other_text) ans += ` (Other: ${r.other_text})`;
-                    row.push(`"${String(ans).replace(/"/g, '""')}"`);
-                  }
-                });
-
-                csvContent += row.join(',') + '\r\n';
+                  });
+                }
               });
-              const encodedUri = encodeURI(csvContent);
-              const link = document.createElement('a');
-              link.setAttribute('href', encodedUri);
-              link.setAttribute('download', 'feedback_submissions.csv');
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+
+              const questionColumns = buildOrderedQuestionColumns(
+                filteredFeedback,
+                allActiveQuestions,
+                availableCanteens,
+                undefined,
+                undefined
+              );
+
+              const baseColumns: CsvColumnDef<any>[] = [
+                { header: 'ID', getValue: fb => fb.id },
+                { header: 'Timestamp', getValue: fb => new Date(fb.timestamp).toLocaleString() },
+                { header: 'Site', getValue: fb => fb.site || '' },
+                { header: 'Canteen', getValue: fb => fb.canteen || fb.canteen_id || '' },
+                { header: 'Name', isUserText: true, getValue: fb => fb.user_name || '' },
+                { header: 'Employee ID', isUserText: true, getValue: fb => fb.user_employee_id || '' },
+                { header: 'Department', isUserText: true, getValue: fb => fb.user_department || '' },
+                { header: 'Meal Slot', isUserText: true, getValue: fb => fb.meal_category || 'Other' },
+                { header: 'Suggestion', isUserText: true, getValue: fb => fb.user_suggestion || '' },
+                {
+                  header: 'Overall Rating',
+                  getValue: fb => {
+                    const avg = fb.overallRating !== null && fb.overallRating !== undefined && !isNaN(fb.overallRating)
+                      ? Number(fb.overallRating).toFixed(1)
+                      : '-';
+                    return avg;
+                  }
+                },
+                ...allCustomFieldKeys.map(cfk => ({
+                  header: `[Field] ${fieldsMap[cfk] || (cfk.startsWith('cf_') ? cfk : cfk.replace(/([A-Z])/g, ' $1').trim())}`,
+                  isUserText: true,
+                  getValue: (fb: any) => {
+                    const val = fb.custom_field_values ? fb.custom_field_values[cfk] : undefined;
+                    if (val === undefined || val === null) return '';
+                    return Array.isArray(val) ? val.join('; ') : String(val);
+                  }
+                }))
+              ];
+
+              const questionColDefs: CsvColumnDef<any>[] = questionColumns.map(qCol => ({
+                header: `[Q] ${qCol.header}`,
+                isUserText: !qCol.isRating,
+                getValue: fb => {
+                  const resp = (fb.responses || []).find((r: any) => String(r.question_id ?? r.questionId ?? '') === qCol.id);
+                  const { value } = extractResponseValue(resp);
+                  return value;
+                }
+              }));
+
+              const allColumns = [...baseColumns, ...questionColDefs];
+              const csvString = generateCsv(filteredFeedback, allColumns);
+              downloadCsv('feedback_submissions.csv', csvString);
             }}
           >
             Export CSV ({filteredFeedback.length})

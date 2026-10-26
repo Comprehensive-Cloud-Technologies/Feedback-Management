@@ -10,6 +10,7 @@ import AverageRatingChart from './AverageRatingChart';
 import { FeedbackSubmission, Question, RatingLevel, Canteen, MealSlot } from '../types';
 import { RATINGS, getEndpoints, FRONTEND_URL, RATING_LABELS } from '../constants';
 import { isRatingQuestion, isRatingResponse, calculateAverageRating, formatAverageRating } from '../utils/ratingUtils';
+import { buildOrderedQuestionColumns, extractResponseValue, generateCsv, downloadCsv, CsvColumnDef } from '../utils/csvExportUtils';
 import catalystLogo from '../src/images/clogo.png';
 
 const toSlug = (name: string) => {
@@ -258,6 +259,44 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
         });
         return map;
     }, [questions]);
+
+    const questionOrderMap = useMemo(() => {
+        const map = new Map<string, number>();
+        questions.forEach((q, idx) => {
+            map.set(String(q.id), idx);
+        });
+        return map;
+    }, [questions]);
+
+    const getSortedResponses = useCallback((responses: any[]) => {
+        if (!Array.isArray(responses)) return [];
+        return [...responses].sort((a, b) => {
+            const idA = String(a.question_id ?? a.questionId ?? '');
+            const idB = String(b.question_id ?? b.questionId ?? '');
+            const orderA = questionOrderMap.has(idA) ? questionOrderMap.get(idA)! : (1000000 + (Number(idA) || 0));
+            const orderB = questionOrderMap.has(idB) ? questionOrderMap.get(idB)! : (1000000 + (Number(idB) || 0));
+            return orderA - orderB;
+        });
+    }, [questionOrderMap]);
+
+    const formatPrintAnswer = (r: any): string => {
+        let answerText = r.answer;
+        if (answerText === undefined || answerText === null) {
+            return '-';
+        }
+        if (Array.isArray(answerText)) {
+            answerText = answerText.join('; ');
+        } else if (typeof answerText === 'string' && answerText.startsWith('[') && answerText.endsWith(']')) {
+            try {
+                const parsed = JSON.parse(answerText);
+                if (Array.isArray(parsed)) answerText = parsed.join('; ');
+            } catch {}
+        }
+        if (r.other_text) {
+            answerText = answerText ? `${answerText} (Other: ${r.other_text})` : `Other: ${r.other_text}`;
+        }
+        return String(answerText).trim() !== '' ? String(answerText) : '-';
+    };
 
     // Dynamic Columns for Manage Feedback Submissions Table
     interface DynamicColumn {
@@ -610,70 +649,50 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
     };
 
     const exportCSV = () => {
-        // Collect all unique questions from filtered feedback to use as headers
-        const allQuestionTexts = new Set<string>();
-        filteredFeedback.forEach(fb => {
-            fb.responses.forEach(r => {
-                const qText = r.question_text || questionsMap[String(r.question_id || r.questionId)] || 'Question';
-                allQuestionTexts.add(qText);
-            });
-        });
-        const uniqueQuestions = Array.from(allQuestionTexts).sort();
+        const questionColumns = buildOrderedQuestionColumns(
+            filteredFeedback,
+            questions,
+            canteens,
+            qMap,
+            questionsMap
+        );
 
-        let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-
-        // Header row: ID, Timestamp, Canteen, dynamic user info columns, Overall Rating, questions
-        const headers = ["ID", "Timestamp", "Canteen", ...dynamicColumns.map(c => c.label), "Overall Rating", ...uniqueQuestions];
-        csvContent += headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\r\n';
-
-        filteredFeedback.forEach(fb => {
-            const avgNum = calculateAverageRating(fb.responses, qMap);
-            const overallRating = avgNum !== null ? avgNum.toFixed(2) : '-';
-
-            // Base row values with dynamic columns
-            const rowValues: any[] = [
-                fb.id,
-                new Date(fb.timestamp).toLocaleString(),
-                fb.canteen || fb.canteen_id,
-                ...dynamicColumns.map(col => {
+        const baseColumns: CsvColumnDef<FeedbackSubmission>[] = [
+            { header: 'ID', getValue: fb => fb.id },
+            { header: 'Timestamp', getValue: fb => new Date(fb.timestamp).toLocaleString() },
+            { header: 'Canteen', getValue: fb => fb.canteen || (fb as any).canteen_id || '' },
+            ...dynamicColumns.map(col => ({
+                header: col.label,
+                isUserText: true,
+                getValue: (fb: FeedbackSubmission) => {
                     const v = col.getValue(fb);
                     if (v === undefined || v === null) return '';
                     return Array.isArray(v) ? v.join('; ') : String(v);
-                }),
-                overallRating
-            ];
-
-            // Add rating or answer for each specific question column
-            uniqueQuestions.forEach(qText => {
-                const response = fb.responses.find(r =>
-                    (r.question_text || questionsMap[String(r.question_id || r.questionId)] || 'Question') === qText
-                );
-                if (!response) {
-                    rowValues.push('');
-                } else if (response.rating !== undefined && response.rating !== null && !isNaN(Number(response.rating))) {
-                    rowValues.push(String(response.rating));
-                } else {
-                    let ans = response.answer || '';
-                    if (typeof ans === 'string' && ans.startsWith('[') && ans.endsWith(']')) {
-                        try {
-                            const parsed = JSON.parse(ans);
-                            if (Array.isArray(parsed)) ans = parsed.join('; ');
-                        } catch {}
-                    }
-                    if (response.other_text) ans += ` (${response.other_text})`;
-                    rowValues.push(ans);
                 }
-            });
+            })),
+            {
+                header: 'Overall Rating',
+                getValue: fb => {
+                    const avgNum = calculateAverageRating(fb.responses, qMap);
+                    return avgNum !== null ? avgNum.toFixed(2) : '-';
+                }
+            }
+        ];
 
-            // Escape each cell and join with comma
-            const escapedRow = rowValues.map(v => `"${String(v).replace(/"/g, '""')}"`);
-            csvContent += escapedRow.join(',') + '\r\n';
-        });
+        const questionColDefs: CsvColumnDef<FeedbackSubmission>[] = questionColumns.map(qCol => ({
+            header: qCol.header,
+            isUserText: !qCol.isRating,
+            getValue: fb => {
+                const resp = fb.responses?.find((r: any) => String(r.question_id ?? r.questionId ?? '') === qCol.id);
+                const { value } = extractResponseValue(resp, qMap[qCol.id], qMap);
+                return value;
+            }
+        }));
 
-        const link = document.createElement('a');
-        link.href = encodeURI(csvContent);
-        link.download = `Feedback_${site}_${new Date().toISOString().split('T')[0]}.csv`;
-        link.click();
+        const allColumns = [...baseColumns, ...questionColDefs];
+        const csvString = generateCsv(filteredFeedback, allColumns);
+        const filename = `Feedback_${site}_${new Date().toISOString().split('T')[0]}.csv`;
+        downloadCsv(filename, csvString);
     };
 
     const activeFeedback = filteredFeedback.find(f => f.id === detailsId);
@@ -1037,7 +1056,8 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                 </span>
                             </div>
 
-                            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                            {/* Screen-Only Table (Retains interactive layout & View Details button) */}
+                            <div className="overflow-x-auto rounded-2xl border border-gray-200 no-print">
                                 <table className="w-full text-left">
                                     <thead className="bg-[#f8f9fa] border-b border-gray-200">
                                         <tr>
@@ -1049,7 +1069,6 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                 </th>
                                             ))}
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">Rating</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest print-only min-w-[280px]">Details</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest text-center no-print whitespace-nowrap sticky right-0 bg-[#f8f9fa] shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Actions</th>
                                         </tr>
                                     </thead>
@@ -1097,58 +1116,6 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                                             </div>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 print-only">
-                                                        <div className="text-[10px] space-y-1.5">
-                                                            {fb.responses.map((r, i) => {
-                                                                const qId = String(r.question_id || r.questionId || '');
-                                                                const qObj = qMap[qId];
-                                                                const qText = r.question_text || qObj?.question_text || questionsMap[qId] || `Question ${i + 1}`;
-                                                                const isRemark = r.is_remark === true || qObj?.customization?.is_remark === true || (qObj as any)?.is_remark === true;
-                                                                const isRating = isRatingResponse(r, qMap);
-
-                                                                if (isRating) {
-                                                                    return (
-                                                                        <div key={i} className="flex justify-between gap-4 border-b border-gray-100 pb-1 last:border-0 break-inside-avoid">
-                                                                            <span className="text-gray-700 font-medium">{qText}:</span>
-                                                                            <span className="font-bold text-gray-900 flex-shrink-0">
-                                                                                {r.rating} {r.rating_label ? `(${r.rating_label})` : ''}
-                                                                            </span>
-                                                                        </div>
-                                                                    );
-                                                                }
-
-                                                                let answerText = r.answer;
-                                                                if (Array.isArray(answerText)) {
-                                                                    answerText = answerText.join(', ');
-                                                                } else if (typeof answerText === 'string' && answerText.startsWith('[') && answerText.endsWith(']')) {
-                                                                    try {
-                                                                        const parsed = JSON.parse(answerText);
-                                                                        if (Array.isArray(parsed)) answerText = parsed.join(', ');
-                                                                    } catch {}
-                                                                }
-                                                                if (r.other_text) {
-                                                                    answerText = answerText ? `${answerText} (Other: ${r.other_text})` : `Other: ${r.other_text}`;
-                                                                }
-                                                                const displayVal = (answerText !== undefined && answerText !== null && String(answerText).trim() !== '')
-                                                                    ? String(answerText)
-                                                                    : '-';
-
-                                                                return (
-                                                                    <div key={i} className="border-b border-gray-100 pb-1 last:border-0 break-inside-avoid">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            {isRemark && (
-                                                                                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[8px] font-bold rounded">Remark</span>
-                                                                            )}
-                                                                            <span className="text-gray-700 font-semibold">{qText}:</span>
-                                                                        </div>
-                                                                        <div className="text-gray-900 font-medium whitespace-pre-wrap break-words pl-2 mt-0.5">
-                                                                            {displayVal}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </td>
                                                     <td className="px-6 py-4 text-center no-print whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
                                                         <div className="flex justify-center gap-2">
                                                             <button
@@ -1164,6 +1131,120 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                                         })}
                                     </tbody>
                                 </table>
+                            </div>
+
+                            {/* Print-Only Submissions Block Layout (Full Width, No Scrollbars, No Clipping) */}
+                            <div className="submissions-print-blocks">
+                                {filteredFeedback.length === 0 ? (
+                                    <div className="p-4 text-center text-gray-500 text-sm">
+                                        No feedback submissions found in the selected range.
+                                    </div>
+                                ) : (
+                                    filteredFeedback.map((fb, idx) => {
+                                        const avgRating = calculateAverageRating(fb.responses, qMap);
+                                        const sortedResponses = getSortedResponses(fb.responses);
+
+                                        return (
+                                            <div key={fb.id} className="submission-print-card">
+                                                {/* Compact Header */}
+                                                <div className="submission-print-header">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-bold text-gray-900 text-xs">
+                                                            #{idx + 1} &bull; {new Date(fb.timestamp).toLocaleString()}
+                                                        </span>
+                                                        <span className="text-gray-400">|</span>
+                                                        <span className="font-bold text-indigo-700 text-xs">
+                                                            {fb.canteen || fb.canteen_id}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-gray-500 text-[11px] font-semibold uppercase tracking-wider">
+                                                            Overall Rating:
+                                                        </span>
+                                                        {avgRating === null ? (
+                                                            <span className="font-bold text-gray-400 text-xs">-</span>
+                                                        ) : (
+                                                            <span className="font-black text-gray-900 text-xs bg-gray-100 px-2 py-0.5 rounded border border-gray-300">
+                                                                ★ {avgRating.toFixed(1)} / 5
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Labeled Grid of Collect-Info & Custom Fields (2-3 columns, wrapping) */}
+                                                {dynamicColumns.length > 0 && (
+                                                    <div className="submission-print-fields">
+                                                        {dynamicColumns.map(col => {
+                                                            const val = col.getValue(fb);
+                                                            const isBlank = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+                                                            let displayStr = '-';
+                                                            if (!isBlank) {
+                                                                displayStr = Array.isArray(val) ? val.join(', ') : String(val);
+                                                            }
+                                                            return (
+                                                                <div key={col.id} className="submission-print-field-item">
+                                                                    <span className="submission-print-field-label">{col.label}:</span>
+                                                                    <span className="submission-print-field-value">{displayStr}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                                {/* Question Responses in configured form sequence */}
+                                                <div className="submission-print-responses">
+                                                    <div className="submission-print-responses-title">
+                                                        Question Responses ({sortedResponses.length})
+                                                    </div>
+                                                    <div className="submission-print-responses-list">
+                                                        {sortedResponses.map((r, i) => {
+                                                            const qId = String(r.question_id ?? r.questionId ?? '');
+                                                            const qObj = qMap[qId];
+                                                            const qText = r.question_text || qObj?.question_text || questionsMap[qId] || `Question ${i + 1}`;
+                                                            const isRemark = r.is_remark === true || qObj?.customization?.is_remark === true || (qObj as any)?.is_remark === true;
+                                                            const isRating = isRatingResponse(r, qMap);
+
+                                                            if (isRating) {
+                                                                return (
+                                                                    <div key={i} className="submission-print-response-row submission-print-rating-row">
+                                                                        <div className="submission-print-q-title">
+                                                                            <span className="text-gray-400 mr-1.5 font-normal">{i + 1}.</span>
+                                                                            {isRemark && (
+                                                                                <span className="submission-print-remark-badge">Remark</span>
+                                                                            )}
+                                                                            <span className="font-semibold text-gray-800">{qText}</span>
+                                                                        </div>
+                                                                        <div className="submission-print-rating-val">
+                                                                            {r.rating !== undefined && r.rating !== null ? r.rating : '-'}
+                                                                            {r.rating_label ? ` (${r.rating_label})` : ''}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            const displayVal = formatPrintAnswer(r);
+
+                                                            return (
+                                                                <div key={i} className="submission-print-response-row submission-print-text-row">
+                                                                    <div className="submission-print-q-title">
+                                                                        <span className="text-gray-400 mr-1.5 font-normal">{i + 1}.</span>
+                                                                        {isRemark && (
+                                                                            <span className="submission-print-remark-badge">Remark</span>
+                                                                        )}
+                                                                        <span className="font-semibold text-gray-800">{qText}:</span>
+                                                                    </div>
+                                                                    <div className="submission-print-text-val whitespace-pre-wrap break-words">
+                                                                        {displayVal}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
                             </div>
                         </section>
                     </div>
@@ -1448,6 +1529,9 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                 )}
 
                 <style>{`
+                    @media screen {
+                        .submissions-print-blocks { display: none !important; }
+                    }
                     @media print {
                         .no-print { display: none !important; margin: 0 !important; padding: 0 !important; height: 0 !important; }
                         * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1470,16 +1554,138 @@ const BranchAdminDashboard: React.FC<BranchAdminDashboardProps> = ({ site, onLog
                         h2, h3 { margin-bottom: 5px !important; break-after: avoid; }
                         .grid { display: grid !important; }
                         .grid > div { break-inside: avoid; }
-                        table { width: 100% !important; border-collapse: collapse !important; border: 1px solid #e5e7eb !important; }
-                        th, td { border: 1px solid #e5e7eb !important; padding: 12px 8px !important; }
+                        .overflow-x-auto { overflow: visible !important; max-width: 100% !important; }
+                        table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; border: 1px solid #e5e7eb !important; }
+                        th, td { border: 1px solid #e5e7eb !important; padding: 10px 8px !important; overflow-wrap: anywhere !important; word-break: break-word !important; white-space: normal !important; }
                         tr { break-inside: avoid !important; page-break-inside: avoid !important; }
-                        .print-only { display: table-cell !important; }
-                        th.print-only { display: table-cell !important; background: #f9fafb !important; }
+                        
+                        /* Submissions Print Block Layout (A4 Portrait & Landscape Optimized) */
+                        .submissions-print-blocks { 
+                            display: block !important; 
+                            width: 100% !important; 
+                            max-width: 100% !important; 
+                        }
+                        .submission-print-card { 
+                            break-inside: avoid !important; 
+                            page-break-inside: avoid !important; 
+                            border: 1px solid #d1d5db !important; 
+                            border-radius: 6px !important; 
+                            margin-bottom: 12px !important; 
+                            padding: 10px 12px !important; 
+                            background: #ffffff !important; 
+                            width: 100% !important;
+                            box-sizing: border-box !important;
+                        }
+                        .submission-print-header { 
+                            display: flex !important; 
+                            justify-content: space-between !important; 
+                            align-items: center !important; 
+                            border-bottom: 1px solid #e5e7eb !important; 
+                            padding-bottom: 6px !important; 
+                            margin-bottom: 6px !important; 
+                            break-after: avoid !important;
+                            page-break-after: avoid !important;
+                        }
+                        .submission-print-fields { 
+                            display: grid !important; 
+                            grid-template-columns: repeat(3, 1fr) !important; 
+                            gap: 6px 12px !important; 
+                            background: #f9fafb !important; 
+                            padding: 8px 10px !important; 
+                            border-radius: 4px !important; 
+                            margin-bottom: 6px !important; 
+                            font-size: 10.5px !important; 
+                            border: 1px solid #f3f4f6 !important;
+                        }
+                        .submission-print-field-item { 
+                            display: flex !important; 
+                            flex-direction: column !important; 
+                            overflow-wrap: anywhere !important; 
+                            word-break: break-word !important; 
+                        }
+                        .submission-print-field-label { 
+                            font-weight: 700 !important; 
+                            color: #6b7280 !important; 
+                            text-transform: uppercase !important; 
+                            font-size: 9px !important; 
+                            letter-spacing: 0.5px !important; 
+                        }
+                        .submission-print-field-value { 
+                            color: #111827 !important; 
+                            font-weight: 600 !important; 
+                        }
+                        .submission-print-responses { 
+                            margin-top: 6px !important; 
+                            font-size: 11px !important; 
+                        }
+                        .submission-print-responses-title { 
+                            font-weight: 700 !important; 
+                            color: #4b5563 !important; 
+                            text-transform: uppercase !important; 
+                            font-size: 9px !important; 
+                            letter-spacing: 0.5px !important; 
+                            margin-bottom: 4px !important; 
+                            border-bottom: 1px solid #f3f4f6 !important;
+                            padding-bottom: 2px !important;
+                        }
+                        .submission-print-responses-list { 
+                            display: flex !important; 
+                            flex-direction: column !important; 
+                            gap: 3px !important; 
+                        }
+                        .submission-print-response-row { 
+                            padding: 3px 4px !important; 
+                            border-bottom: 1px dashed #f3f4f6 !important; 
+                        }
+                        .submission-print-response-row:nth-child(even) { 
+                            background: #fafafa !important; 
+                        }
+                        .submission-print-response-row:last-child { 
+                            border-bottom: none !important; 
+                        }
+                        .submission-print-rating-row { 
+                            display: flex !important; 
+                            justify-content: space-between !important; 
+                            align-items: center !important; 
+                            gap: 12px !important; 
+                        }
+                        .submission-print-rating-val { 
+                            font-weight: 700 !important; 
+                            color: #111827 !important; 
+                            background: #f3f4f6 !important; 
+                            padding: 1px 6px !important; 
+                            border-radius: 4px !important; 
+                            border: 1px solid #e5e7eb !important; 
+                            flex-shrink: 0 !important; 
+                            font-size: 10px !important; 
+                        }
+                        .submission-print-text-row { 
+                            display: block !important; 
+                        }
+                        .submission-print-text-val { 
+                            color: #111827 !important; 
+                            padding-left: 12px !important; 
+                            margin-top: 2px !important; 
+                            line-height: 1.4 !important; 
+                            overflow-wrap: anywhere !important; 
+                            word-break: break-word !important; 
+                        }
+                        .submission-print-remark-badge { 
+                            display: inline-block !important; 
+                            background: #fef3c7 !important; 
+                            color: #92400e !important; 
+                            font-weight: 800 !important; 
+                            font-size: 8px !important; 
+                            padding: 1px 4px !important; 
+                            border-radius: 3px !important; 
+                            margin-right: 5px !important; 
+                            text-transform: uppercase !important; 
+                        }
                         
                         /* Ensure Dashboard content prints even if hide/show tab is active */
                         #feedback, #analytics { display: block !important; }
                     }
-                    .print-only { display: none; }
+                    .submissions-print-blocks { display: none; }
                 `}</style>
             </main>
 

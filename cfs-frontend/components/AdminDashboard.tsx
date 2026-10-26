@@ -7,6 +7,7 @@ import StatCard from './StatCard';
 import FeedbackChart from './FeedbackChart';
 import AverageRatingChart from './AverageRatingChart';
 import { isRatingQuestion, isRatingResponse, calculateAverageRating } from '../utils/ratingUtils';
+import { buildOrderedQuestionColumns, extractResponseValue, generateCsv, downloadCsv, CsvColumnDef } from '../utils/csvExportUtils';
 
 // Pie chart colors for rating levels (Poor, Needs Improvement, Average, Good)
 const PIE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
@@ -444,76 +445,50 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const exportToCSV = () => {
     if (!filteredData.length) return;
 
-    // 1. Collect all unique question texts from the filtered data
-    const allQuestionTexts = new Set<string>();
-    filteredData.forEach(fb => {
-      fb.responses?.forEach(r => {
-        const qText = r.question_text || 'Question';
-        allQuestionTexts.add(qText);
-      });
-    });
-    const uniqueQuestions = Array.from(allQuestionTexts).sort();
+    const questionColumns = buildOrderedQuestionColumns(
+      filteredData,
+      questions,
+      undefined,
+      undefined,
+      undefined
+    );
 
-    // 2. Prepare Headers
-    const headers = [
-      'ID',
-      'Timestamp',
-      'Segment',
-      'Branch',
-      'Canteen',
-      'Meal Slot',
-      'Overall Rating',
-      ...uniqueQuestions
+    const baseColumns: CsvColumnDef<FeedbackSubmission>[] = [
+      { header: 'ID', getValue: fb => String(fb.id || '') },
+      { header: 'Timestamp', getValue: fb => new Date(fb.timestamp).toLocaleString() },
+      {
+        header: 'Segment',
+        getValue: fb => {
+          const segment = segments.find(s => String(s.id) === String((fb as any).segment_id));
+          return segment ? segment.name : 'Unknown';
+        }
+      },
+      { header: 'Branch', getValue: fb => fb.site || '' },
+      { header: 'Canteen', getValue: fb => fb.canteen || '' },
+      { header: 'Meal Slot', getValue: fb => fb.meal_category || 'Other' },
+      {
+        header: 'Overall Rating',
+        getValue: fb => {
+          const avg = calculateAverageRating(fb.responses);
+          return avg !== null ? avg.toFixed(2) : '-';
+        }
+      }
     ];
 
-    // 3. Prepare Rows
-    const rows = filteredData.map(fb => {
-      // Find segment name
-      const segment = segments.find(s => String(s.id) === String(fb.segment_id));
-      const segmentName = segment ? segment.name : 'Unknown';
+    const questionColDefs: CsvColumnDef<FeedbackSubmission>[] = questionColumns.map(qCol => ({
+      header: qCol.header,
+      isUserText: !qCol.isRating,
+      getValue: fb => {
+        const resp = fb.responses?.find((r: any) => String(r.question_id ?? r.questionId ?? '') === qCol.id);
+        const { value } = extractResponseValue(resp);
+        return value;
+      }
+    }));
 
-      // Calculate overall rating
-      const avg = calculateAverageRating(fb.responses);
-      const overallRating = avg !== null ? avg.toFixed(2) : '-';
-
-      // Format Timestamp
-      const formattedTime = new Date(fb.timestamp).toLocaleString();
-
-      // Base Values
-      const rowValues = [
-        String(fb.id || ''),
-        formattedTime,
-        segmentName,
-        fb.site || '',
-        fb.canteen || '',
-        fb.meal_category || 'Other',
-        overallRating
-      ];
-
-      // Add rating for each unique question
-      uniqueQuestions.forEach(qText => {
-        const response = fb.responses?.find(r => (r.question_text || 'Question') === qText);
-        rowValues.push(response ? String(response.rating) : '');
-      });
-
-      return rowValues;
-    });
-
-    // 4. Generate CSV Content with proper escaping
-    const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    const csvContent = [
-      headers.map(escapeCsv).join(','),
-      ...rows.map(row => row.map(escapeCsv).join(','))
-    ].join('\n');
-
-    // 5. Download the file
-    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `catalyst_feedback_export_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const allColumns = [...baseColumns, ...questionColDefs];
+    const csvString = generateCsv(filteredData, allColumns);
+    const filename = `catalyst_feedback_export_${new Date().toISOString().split('T')[0]}.csv`;
+    downloadCsv(filename, csvString);
   };
 
   // ------------------------------------------------------------------
