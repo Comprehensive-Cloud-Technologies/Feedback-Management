@@ -20,6 +20,8 @@ export const RATING_RESPONSE_TYPES = new Set<string>([
   'smiley_faces',
   'star_rating',
   'scale',
+  'numeric_scale',
+  'thumbs',
   'yes_no'
 ]);
 

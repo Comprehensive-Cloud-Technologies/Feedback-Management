@@ -44,6 +44,7 @@ function handleGet()
     $hasBranchId = hasColumnSoft('questions', 'branch_id');
     $hasResponseType = hasColumnSoft('questions', 'response_type');
     $hasCustomization = hasColumnSoft('questions', 'customization');
+    $hasIsRequired = hasColumnSoft('questions', 'is_required');
 
     // Check for ID in path (e.g., /api/questions/123)
     $path = Response::getPath();
@@ -91,6 +92,8 @@ function handleGet()
                 $selectFields .= ', q.response_type';
             if ($hasCustomization)
                 $selectFields .= ', q.customization';
+            if ($hasIsRequired)
+                $selectFields .= ', q.is_required';
             if ($hasSiteId)
                 $selectFields .= ', q.site_id, s.location AS site';
             else
@@ -141,6 +144,8 @@ function handleGet()
             $selectFields .= ', q.response_type';
         if ($hasCustomization)
             $selectFields .= ', q.customization';
+        if ($hasIsRequired)
+            $selectFields .= ', q.is_required';
 
         $sql = "SELECT $selectFields FROM questions q LEFT JOIN sites s ON q.site_id = s.id WHERE q.site_id = ?";
         $params = [$siteId];
@@ -157,6 +162,8 @@ function handleGet()
             $selectFields .= ', response_type';
         if ($hasCustomization)
             $selectFields .= ', customization';
+        if ($hasIsRequired)
+            $selectFields .= ', is_required';
 
         $sql = "SELECT $selectFields FROM questions WHERE site = ?";
         $params = [$site];
@@ -193,6 +200,7 @@ function handlePost()
     $hasBranchName = hasColumn('questions', 'branch_name');
     $hasResponseType = hasColumn('questions', 'response_type');
     $hasCustomization = hasColumn('questions', 'customization');
+    $hasIsRequired = hasColumn('questions', 'is_required');
 
     $data = Response::getBody();
     Response::validateRequired($data, ['site', 'question_text']);
@@ -206,6 +214,7 @@ function handlePost()
     $emoji = $data['emoji'] ?? null;
     $responseType = isset($data['response_type']) ? $data['response_type'] : 'smiley_faces';
     $customization = isset($data['customization']) ? json_encode($data['customization']) : null;
+    $isRequired = isset($data['is_required']) ? ($data['is_required'] ? 1 : 0) : 0;
 
     if ($hasSiteId) {
         $siteId = getSiteIdByName($site);
@@ -261,6 +270,10 @@ function handlePost()
             $cols[] = 'customization';
             $vals[] = $customization;
         }
+        if ($hasIsRequired) {
+            $cols[] = 'is_required';
+            $vals[] = $isRequired;
+        }
 
         $ph = implode(',', array_fill(0, count($cols), '?'));
         $sql = 'INSERT INTO questions (' . implode(',', $cols) . ') VALUES (' . $ph . ')';
@@ -286,6 +299,7 @@ function handlePut()
     $hasSiteId = hasColumn('questions', 'site_id');
     $hasResponseType = hasColumn('questions', 'response_type');
     $hasCustomization = hasColumn('questions', 'customization');
+    $hasIsRequired = hasColumn('questions', 'is_required');
 
     $data = Response::getBody();
 
@@ -305,6 +319,7 @@ function handlePut()
     $questionText = $data['question_text'];
     $responseType = isset($data['response_type']) ? $data['response_type'] : null;
     $customization = isset($data['customization']) ? json_encode($data['customization']) : null;
+    $isRequired = array_key_exists('is_required', $data) ? ($data['is_required'] ? 1 : 0) : null;
 
     // If branch admin, verify question belongs to their site
     if ($user['role'] === 'branch_admin') {
@@ -332,6 +347,11 @@ function handlePut()
     if ($hasCustomization && $customization) {
         $setClauses[] = 'customization = ?';
         $params[] = $customization;
+    }
+
+    if ($hasIsRequired && $isRequired !== null) {
+        $setClauses[] = 'is_required = ?';
+        $params[] = $isRequired;
     }
 
     $params[] = $id;
@@ -451,6 +471,17 @@ function ensureQuestionSchema()
         } catch (Throwable $e) {
             error_log('questions add customization column failed: ' . $e->getMessage());
         }
+    }
+
+    // Add is_required column if missing
+    try {
+        if (!hasColumnSoft('questions', 'is_required')) {
+            Database::execute("ALTER TABLE questions ADD COLUMN is_required TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Required question flag' AFTER customization");
+            Database::execute("UPDATE questions SET is_required = 1 WHERE (response_type IS NULL OR response_type IN ('smiley_faces', 'star_rating', 'numeric_scale', 'thumbs', 'scale', 'yes_no')) AND (customization IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(customization, '$.required')) IS NULL)");
+            Database::execute("UPDATE questions SET is_required = 1 WHERE customization IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(customization, '$.required')) = 'true'");
+        }
+    } catch (Throwable $e) {
+        error_log('questions add is_required column failed: ' . $e->getMessage());
     }
 
     try {

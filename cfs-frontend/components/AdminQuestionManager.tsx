@@ -5,6 +5,7 @@ import { CustomQuestionRenderer } from './CustomQuestionRenderer';
 import { CustomFieldDefinition, CustomFieldType, QuestionResponseType, FormSettings, ThemeId, ThemeCustomTexts } from '../types';
 import ThemeManagerSection from './ThemeManagerSection';
 import { SearchInput, matchesSearch } from './SearchInput';
+import { isQuestionRequired } from '../utils/questionUtils';
 
 // ============= SEARCHABLE DROPDOWN COMPONENT =============
 interface SearchableDropdownProps {
@@ -771,7 +772,12 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
       return () => clearTimeout(timer);
     }
   }, [error]);
-  const [form, setForm] = useState({ site: initialSite || '', question_text: '', response_type: 'smiley_faces' });
+  const [form, setForm] = useState<{ site: string; question_text: string; response_type: string; is_required: boolean }>({
+    site: initialSite || '',
+    question_text: '',
+    response_type: 'smiley_faces',
+    is_required: false
+  });
   const [customization, setCustomization] = useState<Customization | null>(() => {
     // Default to 'smiley_faces' with clean colorful emojis
     return {
@@ -1238,7 +1244,11 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
             question_text: q.question_text,
             emoji: q.emoji,
             response_type: q.response_type,
-            customization: q.customization
+            customization: {
+              ...(typeof q.customization === 'object' && q.customization !== null ? q.customization : {}),
+              required: isQuestionRequired(q)
+            },
+            is_required: isQuestionRequired(q) ? 1 : 0
           })
         });
         if (res.ok) successCount++;
@@ -1286,11 +1296,14 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         site: selectedSite,
         question_text: form.question_text,
         response_type: form.response_type,
+        is_required: form.is_required ? 1 : 0,
       };
 
-      if (customization) {
-        payload.customization = customization;
-      }
+      const finalCustomization = {
+        ...(customization || getInitialCustomization(form.response_type)),
+        required: Boolean(form.is_required)
+      };
+      payload.customization = finalCustomization;
 
       if (canteenObj) {
         payload.branch_id = canteenObj.id; // Use the ID of the selected canteen
@@ -1314,7 +1327,7 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
         throw new Error(d.error || 'Failed to add question');
       }
 
-      setForm({ site: selectedSite, question_text: '', response_type: 'smiley_faces' });
+      setForm({ site: selectedSite, question_text: '', response_type: 'smiley_faces', is_required: false });
       setCustomization(null);
       setShowCustomizer(false);
       await fetchQuestions();
@@ -1355,15 +1368,19 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
     }
     try {
       const token = localStorage.getItem('canteenAdminJWT');
+      const reqState = isQuestionRequired(editingQuestion);
       const payload: any = {
         id,
         question_text: editingQuestion.question_text,
-        response_type: editingQuestion.response_type
+        response_type: editingQuestion.response_type,
+        is_required: reqState ? 1 : 0
       };
 
-      if (editingCustomization) {
-        payload.customization = editingCustomization;
-      }
+      const finalCustomization = {
+        ...(editingCustomization || (editingQuestion.customization as any) || {}),
+        required: reqState
+      };
+      payload.customization = finalCustomization;
 
       const res = await fetch(`${endpoints.QUESTIONS}?id=${id}`, {
         method: 'PUT',
@@ -1783,7 +1800,26 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
       {/* Add New Question */}
       {selectedSite && (
         <div className="mb-8 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center gap-2">➕ Step 2: Add New Question</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">➕ Step 2: Add New Question</h3>
+            {/* Required checkbox aligned right */}
+            <label className="flex items-center gap-2 cursor-pointer select-none bg-white px-3.5 py-1.5 rounded-xl border border-green-300 shadow-sm hover:border-green-500 hover:bg-green-50/50 transition-all self-start sm:self-auto">
+              <input
+                type="checkbox"
+                checked={form.is_required}
+                onChange={e => {
+                  const checked = e.target.checked;
+                  setForm({ ...form, is_required: checked });
+                  if (customization) {
+                    setCustomization({ ...customization, required: checked } as any);
+                  }
+                }}
+                className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500 cursor-pointer"
+              />
+              <span className="text-sm font-bold text-gray-700">Required</span>
+              <span className="text-xs text-red-500 font-bold">*</span>
+            </label>
+          </div>
           <form onSubmit={handleAddQuestion} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Question Text</label>
@@ -1839,7 +1875,11 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                         </div>
                         <label className="block text-sm font-bold text-gray-800 mb-1.5">
                           {form.question_text || 'Your Question Here?'}
-                          {customization.required && <span className="text-red-500 ml-1">*</span>}
+                          {(form.is_required || customization.required) && (
+                            <span className="text-red-500 ml-1 font-bold select-none" aria-required="true" title="Required">
+                              *<span className="sr-only"> (required)</span>
+                            </span>
+                          )}
                         </label>
                         <textarea
                           rows={customization.rows || 3}
@@ -1855,7 +1895,14 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                       </div>
                     ) : (
                       <>
-                        <h3 className="font-bold text-gray-800 mb-6 text-center">{form.question_text || 'Your Question Here?'}</h3>
+                        <h3 className="font-bold text-gray-800 mb-6 text-center">
+                          {form.question_text || 'Your Question Here?'}
+                          {(form.is_required || (customization as any)?.required) && (
+                            <span className="text-red-500 ml-1 font-bold select-none" aria-required="true" title="Required">
+                              *<span className="sr-only"> (required)</span>
+                            </span>
+                          )}
+                        </h3>
                         <CustomQuestionRenderer
                           question={{ id: 0, question_text: form.question_text, response_type: form.response_type, customization: customization || undefined }}
                           onChange={() => { }}
@@ -1927,7 +1974,29 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                     {editingId === q.id && editingQuestion ? (
                       <div className="space-y-4">
                         <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Question Text</label>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+                            <label className="text-xs font-bold text-gray-500 uppercase block">Question Text</label>
+                            <label className="flex items-center gap-2 cursor-pointer select-none bg-white px-3 py-1 rounded-lg border border-indigo-200 shadow-xs hover:border-indigo-400 self-start sm:self-auto">
+                              <input
+                                type="checkbox"
+                                checked={isQuestionRequired(editingQuestion)}
+                                onChange={e => {
+                                  const checked = e.target.checked;
+                                  setEditingQuestion({
+                                    ...editingQuestion,
+                                    is_required: checked,
+                                    customization: { ...(editingQuestion.customization || {}), required: checked }
+                                  });
+                                  if (editingCustomization) {
+                                    setEditingCustomization({ ...editingCustomization, required: checked } as any);
+                                  }
+                                }}
+                                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <span className="text-xs font-bold text-gray-700">Required</span>
+                              <span className="text-xs text-red-500 font-bold">*</span>
+                            </label>
+                          </div>
                           <input value={editingQuestion.question_text} onChange={e => setEditingQuestion({ ...editingQuestion, question_text: e.target.value })} className="w-full p-2 border-2 border-primary-500 rounded-lg text-lg font-semibold" placeholder="Question text" />
                         </div>
                         <div>
@@ -1970,7 +2039,11 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                                   </div>
                                   <label className="block text-sm font-bold text-gray-800 mb-1.5">
                                     {editingQuestion.question_text || 'Your Question Here?'}
-                                    {editingCustomization.required && <span className="text-red-500 ml-1">*</span>}
+                                    {isQuestionRequired(editingQuestion) && (
+                                      <span className="text-red-500 ml-1 font-bold select-none" aria-required="true" title="Required">
+                                        *<span className="sr-only"> (required)</span>
+                                      </span>
+                                    )}
                                   </label>
                                   <textarea
                                     rows={editingCustomization.rows || 3}
@@ -1986,7 +2059,14 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                                 </div>
                               ) : (
                                 <>
-                                  <h3 className="font-bold text-gray-800 mb-6 text-center">{editingQuestion.question_text}</h3>
+                                  <h3 className="font-bold text-gray-800 mb-6 text-center">
+                                    {editingQuestion.question_text}
+                                    {isQuestionRequired(editingQuestion) && (
+                                      <span className="text-red-500 ml-1 font-bold select-none" aria-required="true" title="Required">
+                                        *<span className="sr-only"> (required)</span>
+                                      </span>
+                                    )}
+                                  </h3>
                                   <CustomQuestionRenderer
                                     question={{ id: editingQuestion.id, question_text: editingQuestion.question_text, response_type: editingQuestion.response_type, customization: editingCustomization }}
                                     onChange={() => { }}
@@ -2005,8 +2085,18 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
                       </div>
                     ) : (
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-gray-800">{q.question_text}</span>
+                          {isQuestionRequired(q) ? (
+                            <span className="text-xs font-bold px-2.5 py-0.5 bg-red-100 text-red-700 rounded-full border border-red-200 flex items-center gap-1">
+                              <span>Required</span>
+                              <span className="text-red-500">*</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full border border-gray-200">
+                              Optional
+                            </span>
+                          )}
                           {q.customization?.is_remark && (
                             <span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full border border-amber-200">
                               Remark

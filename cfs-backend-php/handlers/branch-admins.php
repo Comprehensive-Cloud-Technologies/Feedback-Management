@@ -17,6 +17,12 @@ try {
             $site = isset($query['site']) ? trim($query['site']) : null;
 
             $selectFields = 'id, site, username, created_at';
+            if (hasColumnSoft('branch_admins', 'branch_id')) {
+                $selectFields .= ', branch_id';
+            }
+            if (hasColumnSoft('branch_admins', 'branch_name')) {
+                $selectFields .= ', branch_name';
+            }
             if (hasColumnSoft('branch_admins', 'logo')) {
                 $selectFields .= ', logo';
             }
@@ -93,8 +99,24 @@ try {
                 $params = [];
 
                 if ($site) {
+                    $trimmedSite = trim($site);
                     $updates[] = 'site = ?';
-                    $params[] = trim($site);
+                    $params[] = $trimmedSite;
+
+                    if (hasColumnSoft('branch_admins', 'branch_id')) {
+                        $siteRow = Database::fetchOne('SELECT id, location FROM sites WHERE TRIM(location) = ? OR location = ? LIMIT 1', [$trimmedSite, $trimmedSite]);
+                        if ($siteRow) {
+                            $updates[] = 'branch_id = ?';
+                            $params[] = $siteRow['id'];
+                            if (hasColumnSoft('branch_admins', 'branch_name')) {
+                                $updates[] = 'branch_name = ?';
+                                $params[] = $siteRow['location'];
+                            }
+                        }
+                    } elseif (hasColumnSoft('branch_admins', 'branch_name')) {
+                        $updates[] = 'branch_name = ?';
+                        $params[] = $trimmedSite;
+                    }
                 }
                 if ($username) {
                     $updates[] = 'username = ?';
@@ -139,9 +161,33 @@ try {
             }
 
             $hashed = password_hash($password, PASSWORD_BCRYPT);
+
+            // Resolve branch_id and branch_name from sites table
+            $branchId = null;
+            $branchName = $site;
+            if (hasColumnSoft('branch_admins', 'branch_id')) {
+                $siteRow = Database::fetchOne('SELECT id, location FROM sites WHERE TRIM(location) = ? OR location = ? LIMIT 1', [$site, $site]);
+                if ($siteRow) {
+                    $branchId = $siteRow['id'];
+                    $branchName = $siteRow['location'];
+                }
+            }
+
+            $cols = ['site', 'username', 'password'];
+            $vals = [$site, $username, $hashed];
+            if (hasColumnSoft('branch_admins', 'branch_id') && $branchId !== null) {
+                $cols[] = 'branch_id';
+                $vals[] = $branchId;
+            }
+            if (hasColumnSoft('branch_admins', 'branch_name')) {
+                $cols[] = 'branch_name';
+                $vals[] = $branchName;
+            }
+
+            $ph = implode(',', array_fill(0, count($cols), '?'));
             $success = Database::execute(
-                'INSERT INTO branch_admins (site, username, password) VALUES (?, ?, ?)',
-                [$site, $username, $hashed]
+                'INSERT INTO branch_admins (' . implode(',', $cols) . ') VALUES (' . $ph . ')',
+                $vals
             );
 
             if (!$success) {

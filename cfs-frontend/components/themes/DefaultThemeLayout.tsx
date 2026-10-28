@@ -1,6 +1,7 @@
 import React from 'react';
 import { ThemeLayoutProps } from './types';
 import { CustomQuestionRenderer } from '../CustomQuestionRenderer';
+import { isQuestionRequired } from '../../utils/questionUtils';
 
 export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
   catalystLogo,
@@ -132,6 +133,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                 >
                   <h3 className={`${titleSize} font-bold text-gray-800 mb-0.5 sm:mb-1 text-center leading-snug w-full px-2`}>
                     {q.question_text || q.text}
+                    {isQuestionRequired(q) && (
+                      <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                        *<span className="sr-only"> (required)</span>
+                      </span>
+                    )}
                   </h3>
 
                   <div className="w-full flex justify-center scale-[0.80] sm:scale-[0.90] md:scale-100 origin-center transition-transform">
@@ -327,7 +333,11 @@ export const DefaultThemeLayout: React.FC<ThemeLayoutProps> = ({
                 >
                   <label className="block text-xs sm:text-sm font-bold text-gray-800 mb-1.5">
                     {rq.question_text || rq.text || 'Remark'}
-                    {cust.required && <span className="text-red-500 ml-1">*</span>}
+                    {isQuestionRequired(rq) && (
+                      <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                        *<span className="sr-only"> (required)</span>
+                      </span>
+                    )}
                   </label>
                   <textarea
                     rows={cust.rows || 3}

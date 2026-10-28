@@ -2,6 +2,7 @@ import React from 'react';
 import { ThemeLayoutProps } from './types';
 import { CustomQuestionRenderer } from '../CustomQuestionRenderer';
 import { ThemeLogoBadge } from './ThemeLogoBadge';
+import { isQuestionRequired } from '../../utils/questionUtils';
 
 export const NavySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
   catalystLogo,
@@ -132,6 +133,11 @@ export const NavySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
                     </span>
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug break-words">
                       {q.question_text || q.text}
+                      {isQuestionRequired(q) && (
+                        <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                          *<span className="sr-only"> (required)</span>
+                        </span>
+                      )}
                     </h3>
                   </div>
 
@@ -305,7 +311,11 @@ export const NavySplitThemeLayout: React.FC<ThemeLayoutProps> = ({
               >
                 <label className="block text-xs sm:text-sm font-bold text-slate-800 mb-1.5">
                   {rq.question_text || rq.text || 'Remark'}
-                  {cust.required && <span className="text-[#0B1528] ml-1 font-black">*</span>}
+                  {isQuestionRequired(rq) && (
+                    <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                      *<span className="sr-only"> (required)</span>
+                    </span>
+                  )}
                 </label>
                 <textarea
                   rows={cust.rows || 3}

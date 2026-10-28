@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ThemeLayoutProps } from './types';
 import { CustomQuestionRenderer } from '../CustomQuestionRenderer';
+import { isQuestionRequired } from '../../utils/questionUtils';
 
 interface RatingOption {
   value: any;
@@ -232,6 +233,11 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
                           <div className="w-[38%] sm:w-[32%] md:w-[28%] flex-shrink-0 pr-2">
                             <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 leading-snug break-words">
                               {q.question_text || q.text}
+                              {isQuestionRequired(q) && (
+                                <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                                  *<span className="sr-only"> (required)</span>
+                                </span>
+                              )}
                             </h3>
                           </div>
 
@@ -288,6 +294,11 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
                   <div className="sm:max-w-[40%]">
                     <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 leading-snug break-words">
                       {q.question_text || q.text}
+                      {isQuestionRequired(q) && (
+                        <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                          *<span className="sr-only"> (required)</span>
+                        </span>
+                      )}
                     </h3>
                   </div>
 
@@ -437,7 +448,11 @@ export const WhiteThemeLayout: React.FC<ThemeLayoutProps> = ({
               >
                 <label className="block text-xs sm:text-sm font-bold text-gray-800 mb-1.5">
                   {rq.question_text || rq.text || 'Remark'}
-                  {cust.required && <span className="text-red-500 ml-1">*</span>}
+                  {isQuestionRequired(rq) && (
+                    <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                      *<span className="sr-only"> (required)</span>
+                    </span>
+                  )}
                 </label>
                 <textarea
                   rows={cust.rows || 3}

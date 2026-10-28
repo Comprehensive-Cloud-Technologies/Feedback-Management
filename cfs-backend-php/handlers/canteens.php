@@ -218,6 +218,22 @@ function ensureCanteenSchema()
         if (!hasColumn('canteens', 'slug')) {
             Database::execute("ALTER TABLE canteens ADD COLUMN slug VARCHAR(200) NULL AFTER name");
         }
+        // Backfill canteens relations (site_id, branch_id, branch_name, segment_id)
+        try {
+            if (hasColumn('canteens', 'site_id') && hasColumn('canteens', 'branch_id') && hasColumn('sites', 'id')) {
+                Database::execute("UPDATE canteens c JOIN sites s ON c.branch_id = s.id SET c.site_id = s.id WHERE c.site_id IS NULL");
+                Database::execute("UPDATE canteens c JOIN sites s ON c.site_id = s.id SET c.branch_id = s.id WHERE c.branch_id IS NULL");
+            }
+            if (hasColumn('canteens', 'branch_name') && hasColumn('sites', 'location')) {
+                Database::execute("UPDATE canteens c JOIN sites s ON c.branch_id = s.id SET c.branch_name = s.location WHERE (c.branch_name IS NULL OR c.branch_name = '') AND s.location IS NOT NULL");
+            }
+            if (hasColumn('canteens', 'segment_id') && hasColumn('sites', 'segment_id')) {
+                Database::execute("UPDATE canteens c JOIN sites s ON c.branch_id = s.id SET c.segment_id = s.segment_id WHERE c.segment_id IS NULL AND s.segment_id IS NOT NULL");
+            }
+        } catch (Throwable $e) {
+            error_log('canteens relation backfill failed: ' . $e->getMessage());
+        }
+
         // Re-sync all slugs using PHP generateSlug for consistency with frontend toSlug()
         $allCanteens = Database::fetchAll("SELECT id, name, slug FROM canteens");
         foreach ($allCanteens as $c) {
@@ -277,6 +293,7 @@ function handlePost()
     $hasSiteId = hasColumn('canteens', 'site_id');
     $hasSite = hasColumn('canteens', 'site');
     $hasBranchId = hasColumn('canteens', 'branch_id');
+    $hasBranchName = hasColumn('canteens', 'branch_name');
     $hasSegmentId = hasColumn('canteens', 'segment_id');
 
     $data = Response::getBody();
@@ -304,6 +321,13 @@ function handlePost()
             if (!$validSite) {
                 $branchId = null;
             }
+        }
+    }
+
+    if ($hasSegmentId && !$segmentId && ($siteId || $branchId)) {
+        $siteSeg = Database::fetchOne('SELECT segment_id FROM sites WHERE id = ?', [$siteId ?: $branchId]);
+        if ($siteSeg && !empty($siteSeg['segment_id'])) {
+            $segmentId = $siteSeg['segment_id'];
         }
     }
 
@@ -338,6 +362,10 @@ function handlePost()
         if ($hasBranchId && $branchId) {
             $cols[] = 'branch_id';
             $vals[] = $branchId;
+        }
+        if ($hasBranchName) {
+            $cols[] = 'branch_name';
+            $vals[] = $site;
         }
         if ($hasSegmentId && $segmentId) {
             $cols[] = 'segment_id';

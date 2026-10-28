@@ -7,6 +7,7 @@ import { CustomQuestionRenderer } from './CustomQuestionRenderer';
 import { getThemeLayout, resolveThemeTexts } from './themes/ThemeRegistry';
 import catalystLogo from '../src/images/clogo.png';
 import jabilLogo from '../src/images/jabil.png';
+import { isQuestionRequired, isQuestionAnswered } from '../utils/questionUtils';
 
 interface FeedbackFormProps {
   jwt?: string | null;
@@ -281,50 +282,20 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
     if (validationWarning) setValidationWarning('');
   };
 
-  const ratingQuestions = questions.filter(q => isRatingType(q.response_type) && !q.customization?.is_remark);
-  const isAllRatingsAnswered = ratingQuestions.length === 0 || ratingQuestions.every(q => {
-    const val = ratings[q.id];
-    return val !== undefined && val !== null && val !== '';
+  const canSubmit = questions.every(q => {
+    if (!isQuestionRequired(q)) return true;
+    return isQuestionAnswered(q, ratings[q.id]);
   });
-
-  const requiredRemarks = questions.filter(q => q.customization?.is_remark && q.customization?.required);
-  const isAllRequiredRemarksFilled = requiredRemarks.every(q => {
-    const val = ratings[q.id];
-    return typeof val === 'string' && val.trim().length > 0;
-  });
-
-  const canSubmit = isAllRatingsAnswered && isAllRequiredRemarksFilled;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!site || !canteen) return;
 
-    if (!isAllRatingsAnswered) {
-      setValidationWarning('Please answer all rating questions before submitting.');
+    // Check all required questions
+    const firstMissing = questions.find(q => isQuestionRequired(q) && !isQuestionAnswered(q, ratings[q.id]));
+    if (firstMissing) {
+      setValidationWarning(`Please answer the required question: "${firstMissing.question_text || firstMissing.text || 'Required question'}"`);
       return;
-    }
-
-    // Validation check for required remarks
-    for (const q of requiredRemarks) {
-      const val = ratings[q.id];
-      if (typeof val !== 'string' || !val.trim()) {
-        setValidationWarning(`Please fill out the remark: "${q.question_text || q.text || 'Remark'}"`);
-        return;
-      }
-    }
-
-    // Soft warning check for required non-rating questions (excluding remarks already checked)
-    for (const q of questions) {
-      if (!isRatingType(q.response_type) && !q.customization?.is_remark && q.customization?.required) {
-        const val = ratings[q.id];
-        const isBlank = val === undefined || val === null || val === '' ||
-          (Array.isArray(val) && val.length === 0) ||
-          (typeof val === 'object' && (!val.answer || (val.answer === '__other__' && !val.other_text?.trim())));
-        if (isBlank) {
-          setValidationWarning(`Please answer the required question: "${q.question_text || 'Required question'}"`);
-          return;
-        }
-      }
     }
 
     // Soft warning check for required custom user info fields
@@ -348,12 +319,24 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ jwt, site: propSite, onLogo
       const val = ratings[q.id];
       const qType = q.response_type || 'smiley_faces';
       const isRemark = Boolean(q.customization?.is_remark);
+      const answered = isQuestionAnswered(q, val);
+
+      if (!answered) {
+        return {
+          questionId: q.id,
+          question_text: q.question_text || q.text || 'Unknown Question',
+          response_type: qType as any,
+          answer: '-',
+          rating: null,
+          is_remark: isRemark
+        };
+      }
 
       if (isRatingType(qType) && !isRemark) {
         let ratingLabel = '';
         const opts = q.customization?.options;
         if (Array.isArray(opts)) {
-          const matched = opts.find((o: any) => o.value === val);
+          const matched = opts.find((o: any) => String(o.value) === String(val));
           if (matched) ratingLabel = matched.label;
         }
         return {

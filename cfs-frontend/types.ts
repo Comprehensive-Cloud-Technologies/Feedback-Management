@@ -157,8 +157,9 @@ export interface Question {
   text?: string; // Keep for backward compatibility
   branch_id?: number;
   response_type?: QuestionResponseType;
-  customization?: QuestionCustomization & { is_remark?: boolean };
+  customization?: QuestionCustomization & { is_remark?: boolean; required?: boolean };
   is_remark?: boolean;
+  is_required?: boolean | number;
 }
 
 export interface FeedbackResponse {

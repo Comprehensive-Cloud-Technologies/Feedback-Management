@@ -2,6 +2,7 @@ import React from 'react';
 import { ThemeLayoutProps } from './types';
 import { CustomQuestionRenderer } from '../CustomQuestionRenderer';
 import { ThemeLogoBadge } from './ThemeLogoBadge';
+import { isQuestionRequired } from '../../utils/questionUtils';
 
 export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
   catalystLogo,
@@ -156,6 +157,11 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                       </span>
                       <h3 className="font-serif font-bold text-sm sm:text-base text-[#FFF8E7] leading-snug break-words">
                         {q.question_text || q.text}
+                        {isQuestionRequired(q) && (
+                          <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                            *<span className="sr-only"> (required)</span>
+                          </span>
+                        )}
                       </h3>
                       <div className="border-b border-dotted border-emerald-400/30 flex-grow mx-2 mb-1 hidden sm:block"></div>
                     </div>
@@ -338,7 +344,11 @@ export const ChalkboardThemeLayout: React.FC<ThemeLayoutProps> = ({
                 >
                   <label className="block text-xs sm:text-sm font-serif font-bold text-[#FFF8E7] mb-1.5">
                     {rq.question_text || rq.text || 'Remark'}
-                    {cust.required && <span className="text-amber-400 ml-1">*</span>}
+                    {isQuestionRequired(rq) && (
+                      <span className="text-red-500 font-bold ml-1 inline-block select-none" aria-required="true" title="Required">
+                        *<span className="sr-only"> (required)</span>
+                      </span>
+                    )}
                   </label>
                   <textarea
                     rows={cust.rows || 3}

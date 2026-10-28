@@ -201,6 +201,8 @@ function handlePost()
             return;
         }
 
+
+
         // Calculate overall rating (average of numeric ratings only)
         $totalRating = 0;
         $ratingCount = 0;
@@ -232,6 +234,24 @@ function handlePost()
         if ($canteenRow) {
             $canteenId = $canteenRow['id'];
             error_log("Found canteen_id=$canteenId for $canteen");
+
+            // Resolve segment_id from canteen -> site -> segment_id
+            if (hasColumnSoft('feedback', 'segment_id')) {
+                $siteSegRow = Database::fetchOne(
+                    'SELECT seg.id as seg_id FROM canteens c JOIN sites s ON c.branch_id = s.id JOIN segments seg ON s.segment_id = seg.id WHERE c.id = ? LIMIT 1',
+                    [$canteenId]
+                );
+                if (!$siteSegRow) {
+                    // Fallback: try via site name
+                    $siteSegRow = Database::fetchOne(
+                        'SELECT segment_id as seg_id FROM sites WHERE location = ? LIMIT 1',
+                        [$site]
+                    );
+                }
+                $resolvedSegmentId = $siteSegRow ? $siteSegRow['seg_id'] : null;
+            } else {
+                $resolvedSegmentId = null;
+            }
 
             // Auto-categorize based on time slots
             $slots = !empty($canteenRow['meal_slots']) ? json_decode($canteenRow['meal_slots'], true) : [];
@@ -294,6 +314,79 @@ function handlePost()
             return;
         }
 
+        // Server-side validation of required questions for this canteen/site
+        try {
+            $hasBranchCol = hasColumnSoft('questions', 'branch_id');
+            $hasReqCol = hasColumnSoft('questions', 'is_required');
+            $reqSelect = $hasReqCol ? ', is_required' : '';
+
+            if ($canteenId && $hasBranchCol) {
+                if ($siteId) {
+                    $questionQuery = "SELECT id, question_text, response_type, customization$reqSelect FROM questions WHERE site_id = ? AND (branch_id = ? OR branch_id IS NULL)";
+                    $siteQuestions = Database::fetchAll($questionQuery, [$siteId, $canteenId]);
+                } else {
+                    $questionQuery = "SELECT id, question_text, response_type, customization$reqSelect FROM questions WHERE site = ? AND (branch_id = ? OR branch_id IS NULL)";
+                    $siteQuestions = Database::fetchAll($questionQuery, [$site, $canteenId]);
+                }
+            } else {
+                if ($siteId) {
+                    $questionQuery = "SELECT id, question_text, response_type, customization$reqSelect FROM questions WHERE site_id = ?";
+                    $siteQuestions = Database::fetchAll($questionQuery, [$siteId]);
+                } else {
+                    $questionQuery = "SELECT id, question_text, response_type, customization$reqSelect FROM questions WHERE site = ?";
+                    $siteQuestions = Database::fetchAll($questionQuery, [$site]);
+                }
+            }
+
+            $responseMap = [];
+            foreach ($responses as $r) {
+                if (is_array($r) && isset($r['questionId'])) {
+                    $responseMap[$r['questionId']] = $r;
+                }
+            }
+
+            foreach ($siteQuestions as $sq) {
+                $qId = $sq['id'];
+                $cust = !empty($sq['customization']) ? (is_array($sq['customization']) ? $sq['customization'] : json_decode($sq['customization'], true)) : [];
+
+                $isRequired = false;
+                if (isset($sq['is_required']) && $sq['is_required'] !== null) {
+                    $isRequired = (intval($sq['is_required']) === 1);
+                } elseif (isset($cust['required']) && $cust['required'] !== null) {
+                    $isRequired = (bool)$cust['required'];
+                } else {
+                    $type = $sq['response_type'] ?? 'smiley_faces';
+                    $isRating = in_array($type, ['smiley_faces', 'star_rating', 'numeric_scale', 'thumbs', 'scale', 'yes_no']);
+                    $isRemark = !empty($cust['is_remark']);
+                    $isRequired = $isRating && !$isRemark;
+                }
+
+                if ($isRequired) {
+                    $userResp = $responseMap[$qId] ?? null;
+                    $isAnswered = false;
+                    if ($userResp !== null) {
+                        $ans = $userResp['answer'] ?? null;
+                        $rat = $userResp['rating'] ?? null;
+                        if ($rat !== null && $rat !== '' && is_numeric($rat)) {
+                            $isAnswered = true;
+                        } elseif ($ans !== null && $ans !== '' && $ans !== '-') {
+                            if (is_string($ans) && trim($ans) !== '') {
+                                $isAnswered = true;
+                            } elseif (is_array($ans) && count($ans) > 0) {
+                                $isAnswered = true;
+                            }
+                        }
+                    }
+                    if (!$isAnswered) {
+                        Response::error("Required question '{$sq['question_text']}' was not answered.", 400);
+                        return;
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('Error checking required questions: ' . $e->getMessage());
+        }
+
         // Insert feedback - build dynamic column list
         $cols = ['canteen_id', 'rating', 'username', 'responses', 'timestamp'];
         $vals = [$canteenId, $overallRating, $username, json_encode($responses), time() * 1000];
@@ -312,6 +405,20 @@ function handlePost()
         }
         if (hasColumnSoft('feedback', 'site')) {
             $cols[] = 'site';
+            $vals[] = $site;
+        }
+        // Populate segment_id if the column exists and we resolved one
+        if (hasColumnSoft('feedback', 'segment_id') && !empty($resolvedSegmentId)) {
+            $cols[] = 'segment_id';
+            $vals[] = $resolvedSegmentId;
+        }
+        // Populate branch_id and branch_name if available
+        if (hasColumnSoft('feedback', 'branch_id') && !empty($siteId)) {
+            $cols[] = 'branch_id';
+            $vals[] = $siteId;
+        }
+        if (hasColumnSoft('feedback', 'branch_name') && !empty($site)) {
+            $cols[] = 'branch_name';
             $vals[] = $site;
         }
 
@@ -355,9 +462,10 @@ function handlePost()
             $sanitizedCustomFields = [];
             foreach ($customFieldValues as $k => $v) {
                 $sanitizedKey = preg_replace('/[^a-zA-Z0-9_\-]/', '', strval($k));
-                if (empty($sanitizedKey)) continue;
+                if (empty($sanitizedKey))
+                    continue;
                 if (is_array($v)) {
-                    $sanitizedCustomFields[$sanitizedKey] = array_map(function($item) {
+                    $sanitizedCustomFields[$sanitizedKey] = array_map(function ($item) {
                         return trim(strip_tags(strval($item)));
                     }, $v);
                 } else {
@@ -464,6 +572,38 @@ function ensureFeedbackSchema()
         // Ensure meal_category column exists
         if (!hasColumnSoft('feedback', 'meal_category')) {
             Database::execute("ALTER TABLE feedback ADD COLUMN meal_category VARCHAR(100) DEFAULT 'Other' AFTER timestamp");
+        }
+
+        // Backfill feedback.segment_id and branch_id for existing rows that are NULL
+        // Path: feedback.canteen_id -> canteens.branch_id -> sites.segment_id
+        try {
+            if (hasColumnSoft('feedback', 'segment_id') && hasColumnSoft('canteens', 'branch_id') && hasColumnSoft('sites', 'segment_id')) {
+                Database::execute(
+                    "UPDATE feedback f
+                     JOIN canteens c ON f.canteen_id = c.id
+                     JOIN sites s ON c.branch_id = s.id
+                     SET f.segment_id = s.segment_id
+                     WHERE f.segment_id IS NULL AND s.segment_id IS NOT NULL"
+                );
+            }
+            if (hasColumnSoft('feedback', 'branch_id') && hasColumnSoft('canteens', 'branch_id')) {
+                Database::execute(
+                    "UPDATE feedback f
+                     JOIN canteens c ON f.canteen_id = c.id
+                     SET f.branch_id = c.branch_id
+                     WHERE f.branch_id IS NULL AND c.branch_id IS NOT NULL"
+                );
+            }
+            if (hasColumnSoft('feedback', 'branch_name') && hasColumnSoft('sites', 'location')) {
+                Database::execute(
+                    "UPDATE feedback f
+                     JOIN sites s ON f.branch_id = s.id
+                     SET f.branch_name = s.location
+                     WHERE (f.branch_name IS NULL OR f.branch_name = '') AND s.location IS NOT NULL"
+                );
+            }
+        } catch (Throwable $e) {
+            error_log('feedback backfill relations: ' . $e->getMessage());
         }
 
         // Ensure user info columns exist
