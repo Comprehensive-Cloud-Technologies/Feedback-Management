@@ -871,14 +871,19 @@ const AdminQuestionManager: React.FC<AdminQuestionManagerProps> = ({ site: initi
     setSavingSettings(true);
     try {
       const token = localStorage.getItem('canteenAdminJWT');
-      await fetch(endpoints.FORM_SETTINGS, {
+      const res = await fetch(endpoints.FORM_SETTINGS, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ canteen_id: selectedCanteenId, ...updatedSettings })
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with ${res.status}`);
+      }
       showNotification('Form settings saved! ✅');
-    } catch {
-      setError('Failed to save form settings');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save form settings');
+      console.error('Save form settings error:', err);
     }
     setSavingSettings(false);
   };

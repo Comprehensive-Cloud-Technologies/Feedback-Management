@@ -5,6 +5,15 @@
  * PUT    /api/form-settings               — Update settings (admin/branch_admin only)
  */
 
+if (!class_exists('Database')) {
+    require_once __DIR__ . '/../src/Cors.php';
+    require_once __DIR__ . '/../src/Constants.php';
+    require_once __DIR__ . '/../src/Database.php';
+    require_once __DIR__ . '/../src/Response.php';
+    require_once __DIR__ . '/../src/JWT.php';
+    require_once __DIR__ . '/../src/Auth.php';
+}
+
 try {
     ensureFormSettingsSchema();
 
@@ -45,6 +54,10 @@ function ensureFormSettingsSchema()
                     field_meal_slot TINYINT(1) DEFAULT 0,
                     field_employee_id TINYINT(1) DEFAULT 0,
                     custom_fields JSON NULL DEFAULT NULL,
+                    theme_id VARCHAR(50) NOT NULL DEFAULT 'default',
+                    theme_custom_texts JSON NULL DEFAULT NULL,
+                    bg_image_enabled TINYINT(1) DEFAULT 0,
+                    bg_image_data LONGTEXT NULL DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     UNIQUE KEY unique_canteen (canteen_id)
@@ -71,6 +84,16 @@ function ensureFormSettingsSchema()
             if (empty($tcCols)) {
                 Database::execute("ALTER TABLE form_settings ADD COLUMN theme_custom_texts JSON NULL DEFAULT NULL AFTER theme_id");
             }
+            // Migrate: add bg_image_enabled if missing
+            $bgCols = Database::fetchAll("SHOW COLUMNS FROM form_settings LIKE 'bg_image_enabled'");
+            if (empty($bgCols)) {
+                Database::execute("ALTER TABLE form_settings ADD COLUMN bg_image_enabled TINYINT(1) DEFAULT 0 AFTER theme_custom_texts");
+            }
+            // Migrate: add bg_image_data if missing
+            $bgDataCols = Database::fetchAll("SHOW COLUMNS FROM form_settings LIKE 'bg_image_data'");
+            if (empty($bgDataCols)) {
+                Database::execute("ALTER TABLE form_settings ADD COLUMN bg_image_data LONGTEXT NULL DEFAULT NULL AFTER bg_image_enabled");
+            }
         }
     } catch (Throwable $e) {
         error_log('Form settings schema check failed: ' . $e->getMessage());
@@ -85,14 +108,9 @@ function handleGet()
 {
     $query = Response::getQuery();
 
-    if (!isset($query['canteen_id'])) {
-        Response::error('Missing canteen_id parameter', 400);
-    }
-
-    $canteenId = intval($query['canteen_id']);
-
     $hasCustomFields = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'custom_fields'");
     $hasThemeCols = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'theme_id'");
+    $hasBgCols = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'bg_image_enabled'");
 
     $selectCols = 'enable_fullscreen, collect_user_info, field_name, field_department, field_suggestion, field_meal_slot, field_employee_id';
     if ($hasCustomFields) {
@@ -101,6 +119,57 @@ function handleGet()
     if ($hasThemeCols) {
         $selectCols .= ', theme_id, theme_custom_texts';
     }
+    if ($hasBgCols) {
+        $selectCols .= ', bg_image_enabled, bg_image_data';
+    }
+
+    if (isset($query['site'])) {
+        $rawSite = $query['site'];
+        $cleanSite = trim($rawSite);
+        $hasSiteId = Database::fetchOne("SHOW COLUMNS FROM canteens LIKE 'site_id'");
+        if ($hasSiteId) {
+            $siteRow = Database::fetchOne("SELECT id FROM sites WHERE TRIM(location) = ? OR location = ?", [$cleanSite, $rawSite]);
+            $siteId = $siteRow ? (int)$siteRow['id'] : null;
+            $canteens = $siteId ? Database::fetchAll("SELECT id, name FROM canteens WHERE site_id = ?", [$siteId]) : [];
+        } else {
+            $canteens = Database::fetchAll("SELECT id, name FROM canteens WHERE TRIM(site) = ? OR site = ?", [$cleanSite, $rawSite]);
+        }
+        $settingsByCanteen = [];
+        foreach ($canteens as $c) {
+            $cId = (int)$c['id'];
+            $cName = $c['name'];
+            $row = Database::fetchOne("SELECT $selectCols FROM form_settings WHERE canteen_id = ?", [$cId]);
+            if ($row) {
+                if (!empty($row['custom_fields'])) {
+                    $decoded = is_string($row['custom_fields']) ? json_decode($row['custom_fields'], true) : $row['custom_fields'];
+                    $row['custom_fields'] = is_array($decoded) ? $decoded : [];
+                } else {
+                    $row['custom_fields'] = [];
+                }
+                $settingsByCanteen[$cName] = $row;
+            } else {
+                $settingsByCanteen[$cName] = [
+                    'enable_fullscreen' => 0,
+                    'collect_user_info' => 0,
+                    'field_name' => 0,
+                    'field_department' => 0,
+                    'field_suggestion' => 0,
+                    'field_meal_slot' => 0,
+                    'field_employee_id' => 0,
+                    'custom_fields' => [],
+                    'theme_id' => 'default'
+                ];
+            }
+        }
+        Response::success(['settings_by_canteen' => $settingsByCanteen]);
+        return;
+    }
+
+    if (!isset($query['canteen_id'])) {
+        Response::error('Missing canteen_id parameter', 400);
+    }
+
+    $canteenId = intval($query['canteen_id']);
 
     $settings = Database::fetchOne(
         "SELECT $selectCols FROM form_settings WHERE canteen_id = ?",
@@ -139,6 +208,8 @@ function handleGet()
             'field_employee_id' => 0,
             'theme_id' => 'default',
             'theme_custom_texts' => null,
+            'bg_image_enabled' => 0,
+            'bg_image_data' => null,
         ];
     }
 
@@ -153,6 +224,8 @@ function handleGet()
         'custom_fields' => $customFields,
         'theme_id' => $themeId,
         'theme_custom_texts' => $themeCustomTexts,
+        'bg_image_enabled' => intval($settings['bg_image_enabled'] ?? 0),
+        'bg_image_data' => $settings['bg_image_data'] ?? null,
     ];
 
     Response::success(['settings' => $resultSettings]);
@@ -160,7 +233,7 @@ function handleGet()
 
 /**
  * PUT /api/form-settings
- * Body: { canteen_id, enable_fullscreen, collect_user_info, field_name, field_department, field_suggestion, field_meal_slot, field_employee_id, custom_fields }
+ * Body: { canteen_id, enable_fullscreen, collect_user_info, field_name, field_department, field_suggestion, field_meal_slot, field_employee_id, custom_fields, theme_id, theme_custom_texts }
  */
 function handlePut()
 {
@@ -285,13 +358,65 @@ function handlePut()
         $themeCustomTextsJson = $existing['theme_custom_texts'] ?? null;
     }
 
+    // Validate bg_image_enabled
+    $bgImageEnabled = isset($data['bg_image_enabled']) ? (empty($data['bg_image_enabled']) ? 0 : 1) : ($existing ? intval($existing['bg_image_enabled'] ?? 0) : 0);
+
+    // Validate bg_image_data
+    $bgImageData = $existing['bg_image_data'] ?? null;
+    if (array_key_exists('bg_image_data', $data)) {
+        if ($data['bg_image_data'] === null || $data['bg_image_data'] === '') {
+            $bgImageData = null;
+        } else {
+            $rawImg = strval($data['bg_image_data']);
+            // Base64 size validation (~3MB base64 is ~2MB binary)
+            if (strlen($rawImg) > 3145728) {
+                Response::error('Background image exceeds maximum allowed size of 2MB', 400);
+                return;
+            }
+
+            // Verify MIME header prefix: jpeg, png, webp
+            if (preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+\/=\s]+)$/', $rawImg, $matches)) {
+                $base64Content = $matches[2];
+                $decoded = base64_decode($base64Content, true);
+                if ($decoded === false || strlen($decoded) > 2097152) {
+                    Response::error('Invalid image data or image exceeds 2MB', 400);
+                    return;
+                }
+
+                // Deep image check using getimagesizefromstring if available
+                if (function_exists('getimagesizefromstring')) {
+                    $imgInfo = @getimagesizefromstring($decoded);
+                    if ($imgInfo === false) {
+                        Response::error('Uploaded file is not a valid image file', 400);
+                        return;
+                    }
+                    $allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+                    if (!isset($imgInfo['mime']) || !in_array($imgInfo['mime'], $allowedMimes, true)) {
+                        Response::error('Unsupported image format. Allowed formats: JPG, PNG, WEBP', 400);
+                        return;
+                    }
+                }
+                $bgImageData = $rawImg;
+            } else {
+                Response::error('Invalid image format. Allowed formats: JPG, PNG, WEBP', 400);
+                return;
+            }
+        }
+    }
+
     // Check if columns exist
     $hasCustomFieldsCol = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'custom_fields'");
     $hasThemeCol = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'theme_id'");
+    $hasBgCol = Database::fetchOne("SHOW COLUMNS FROM form_settings LIKE 'bg_image_enabled'");
 
     // Upsert
     if ($existing) {
-        if ($hasCustomFieldsCol && $hasThemeCol) {
+        if ($hasBgCol && $hasCustomFieldsCol && $hasThemeCol) {
+            Database::execute(
+                'UPDATE form_settings SET enable_fullscreen = ?, collect_user_info = ?, field_name = ?, field_department = ?, field_suggestion = ?, field_meal_slot = ?, field_employee_id = ?, custom_fields = ?, theme_id = ?, theme_custom_texts = ?, bg_image_enabled = ?, bg_image_data = ? WHERE canteen_id = ?',
+                [$enableFullscreen, $collectUserInfo, $fieldName, $fieldDepartment, $fieldSuggestion, $fieldMealSlot, $fieldEmployeeId, $customFieldsJson, $themeId, $themeCustomTextsJson, $bgImageEnabled, $bgImageData, $canteenId]
+            );
+        } elseif ($hasCustomFieldsCol && $hasThemeCol) {
             Database::execute(
                 'UPDATE form_settings SET enable_fullscreen = ?, collect_user_info = ?, field_name = ?, field_department = ?, field_suggestion = ?, field_meal_slot = ?, field_employee_id = ?, custom_fields = ?, theme_id = ?, theme_custom_texts = ? WHERE canteen_id = ?',
                 [$enableFullscreen, $collectUserInfo, $fieldName, $fieldDepartment, $fieldSuggestion, $fieldMealSlot, $fieldEmployeeId, $customFieldsJson, $themeId, $themeCustomTextsJson, $canteenId]
@@ -308,7 +433,12 @@ function handlePut()
             );
         }
     } else {
-        if ($hasCustomFieldsCol && $hasThemeCol) {
+        if ($hasBgCol && $hasCustomFieldsCol && $hasThemeCol) {
+            Database::execute(
+                'INSERT INTO form_settings (canteen_id, enable_fullscreen, collect_user_info, field_name, field_department, field_suggestion, field_meal_slot, field_employee_id, custom_fields, theme_id, theme_custom_texts, bg_image_enabled, bg_image_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$canteenId, $enableFullscreen, $collectUserInfo, $fieldName, $fieldDepartment, $fieldSuggestion, $fieldMealSlot, $fieldEmployeeId, $customFieldsJson, $themeId, $themeCustomTextsJson, $bgImageEnabled, $bgImageData]
+            );
+        } elseif ($hasCustomFieldsCol && $hasThemeCol) {
             Database::execute(
                 'INSERT INTO form_settings (canteen_id, enable_fullscreen, collect_user_info, field_name, field_department, field_suggestion, field_meal_slot, field_employee_id, custom_fields, theme_id, theme_custom_texts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [$canteenId, $enableFullscreen, $collectUserInfo, $fieldName, $fieldDepartment, $fieldSuggestion, $fieldMealSlot, $fieldEmployeeId, $customFieldsJson, $themeId, $themeCustomTextsJson]
