@@ -122,63 +122,78 @@ function handleGet()
         return;
     }
 
-    $site = $query['site'];
+    $site = trim($query['site']);
     $siteId = null;
     if ($hasSiteId) {
         $siteId = getSiteIdByName($site);
-        if (!$siteId) {
-            Response::error('Site not found', 404);
-        }
     }
 
     // If branch admin, enforce site scoping
     if ($user && isset($user['role']) && $user['role'] === 'branch_admin') {
-        if (!isset($user['site']) || $user['site'] !== $site) {
+        if (!isset($user['site']) || strcasecmp(trim($user['site']), $site) !== 0) {
             Response::error(ERROR_MESSAGES['FORBIDDEN'], 403);
         }
     }
 
+    $selectFields = 'q.id, q.question_text, q.emoji';
+    if ($hasSegmentId)
+        $selectFields .= ', q.segment_id';
+    if ($hasBranchId)
+        $selectFields .= ', q.branch_id';
+    if ($hasResponseType)
+        $selectFields .= ', q.response_type';
+    if ($hasCustomization)
+        $selectFields .= ', q.customization';
+    if ($hasIsRequired)
+        $selectFields .= ', q.is_required';
+    if ($hasSiteId)
+        $selectFields .= ', q.site_id, COALESCE(s.location, q.site, ?) AS site';
+    else
+        $selectFields .= ', q.site';
+
+    $sql = "SELECT $selectFields FROM questions q";
     if ($hasSiteId) {
-        $selectFields = 'q.id, q.question_text, q.emoji, q.site_id, s.location AS site';
-        if ($hasSegmentId)
-            $selectFields .= ', q.segment_id';
-        if ($hasBranchId)
-            $selectFields .= ', q.branch_id';
-        if ($hasResponseType)
-            $selectFields .= ', q.response_type';
-        if ($hasCustomization)
-            $selectFields .= ', q.customization';
-        if ($hasIsRequired)
-            $selectFields .= ', q.is_required';
-
-        $sql = "SELECT $selectFields FROM questions q LEFT JOIN sites s ON q.site_id = s.id WHERE q.site_id = ?";
-        $params = [$siteId];
-
-        if (isset($query['branch_id']) && $hasBranchId) {
-            $sql .= " AND q.branch_id = ?";
-            $params[] = $query['branch_id'];
-        }
-
-        $questions = Database::fetchAll($sql, $params);
-    } else {
-        $selectFields = 'id, question_text, emoji';
-        if ($hasResponseType)
-            $selectFields .= ', response_type';
-        if ($hasCustomization)
-            $selectFields .= ', customization';
-        if ($hasIsRequired)
-            $selectFields .= ', is_required';
-
-        $sql = "SELECT $selectFields FROM questions WHERE site = ?";
-        $params = [$site];
-
-        if (isset($query['branch_id']) && $hasBranchId) {
-            $sql .= " AND branch_id = ?";
-            $params[] = $query['branch_id'];
-        }
-
-        $questions = Database::fetchAll($sql, $params);
+        $sql .= " LEFT JOIN sites s ON q.site_id = s.id";
     }
+
+    $whereClauses = [];
+    $params = [];
+    if ($hasSiteId) {
+        $params[] = $site;
+    }
+
+    // Match site by site_id, location, or direct q.site string
+    $siteConditions = [];
+    if ($hasSiteId && $siteId !== null) {
+        $siteConditions[] = "q.site_id = ?";
+        $params[] = $siteId;
+    }
+    $siteConditions[] = "q.site = ?";
+    $params[] = $site;
+    $siteConditions[] = "TRIM(q.site) = TRIM(?)";
+    $params[] = $site;
+    if ($hasSiteId) {
+        $siteConditions[] = "TRIM(s.location) = TRIM(?)";
+        $params[] = $site;
+    }
+    $whereClauses[] = '(' . implode(' OR ', $siteConditions) . ')';
+
+    // Handle branch_id (canteen filter)
+    if (isset($query['branch_id']) && $hasBranchId && !empty($query['branch_id'])) {
+        $canteenBranchId = (int)$query['branch_id'];
+        // Match questions scoped to this specific canteen, OR site-wide questions where branch_id is NULL/0
+        if ($siteId !== null) {
+            $whereClauses[] = "(q.branch_id = ? OR q.branch_id IS NULL OR q.branch_id = 0 OR q.branch_id = ?)";
+            $params[] = $canteenBranchId;
+            $params[] = $siteId;
+        } else {
+            $whereClauses[] = "(q.branch_id = ? OR q.branch_id IS NULL OR q.branch_id = 0)";
+            $params[] = $canteenBranchId;
+        }
+    }
+
+    $sql .= " WHERE " . implode(' AND ', $whereClauses);
+    $questions = Database::fetchAll($sql, $params);
 
     // Decode customization JSON
     foreach ($questions as &$q) {
@@ -525,6 +540,20 @@ function ensureQuestionSchema()
     } catch (Throwable $e) {
         error_log('questions branch columns fix failed: ' . $e->getMessage());
     }
+
+    // Automatically backfill questions.site_id from sites.location if missing
+    try {
+        if ($hasSiteId) {
+            Database::execute("
+                UPDATE questions q
+                INNER JOIN sites s ON TRIM(q.site) = TRIM(s.location)
+                SET q.site_id = s.id
+                WHERE q.site_id IS NULL
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('questions auto-backfill site_id failed: ' . $e->getMessage());
+    }
 }
 
 function hasColumn($table, $column)
@@ -545,6 +574,10 @@ function hasColumnSoft($table, $column)
 
 function getSiteIdByName($siteName)
 {
-    $row = Database::fetchOne('SELECT id FROM sites WHERE location = ?', [$siteName]);
+    $trimmed = trim($siteName);
+    $row = Database::fetchOne('SELECT id FROM sites WHERE TRIM(location) = TRIM(?)', [$trimmed]);
+    if (!$row) {
+        $row = Database::fetchOne('SELECT id FROM sites WHERE location LIKE ?', ['%' . $trimmed . '%']);
+    }
     return $row ? (int) $row['id'] : null;
 }
